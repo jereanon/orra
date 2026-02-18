@@ -52,7 +52,7 @@ impl GitHubConfig {
             .request(method, self.api_url(path))
             .header("Authorization", format!("Bearer {}", self.token))
             .header("Accept", "application/vnd.github+json")
-            .header("User-Agent", "claw-lib")
+            .header("User-Agent", "agentic-rs")
             .header("X-GitHub-Api-Version", "2022-11-28")
     }
 }
@@ -558,7 +558,7 @@ impl Tool for SearchIssuesTool {
             .get("https://api.github.com/search/issues")
             .header("Authorization", format!("Bearer {}", self.gh.token))
             .header("Accept", "application/vnd.github+json")
-            .header("User-Agent", "claw-lib")
+            .header("User-Agent", "agentic-rs")
             .header("X-GitHub-Api-Version", "2022-11-28")
             .query(&[("q", &q), ("per_page", &"10".to_string())])
             .send()

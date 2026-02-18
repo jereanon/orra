@@ -63,7 +63,7 @@ impl McpClient {
                 sampling: None,
             },
             client_info: Implementation {
-                name: "claw-lib".into(),
+                name: "agentic-rs".into(),
                 version: env!("CARGO_PKG_VERSION").into(),
             },
         };

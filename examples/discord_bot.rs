@@ -1,15 +1,15 @@
 use std::io::{self, Write};
 use std::sync::Arc;
 
-use claw_lib::context::CharEstimator;
-use claw_lib::message::Message;
-use claw_lib::namespace::Namespace;
-use claw_lib::policy::PolicyRegistry;
-use claw_lib::providers::claude::ClaudeProvider;
-use claw_lib::runtime::{Runtime, RuntimeConfig};
-use claw_lib::store::InMemoryStore;
-use claw_lib::tool::ToolRegistry;
-use claw_lib::tools::discord::DiscordConfig;
+use agentic_rs::context::CharEstimator;
+use agentic_rs::message::Message;
+use agentic_rs::namespace::Namespace;
+use agentic_rs::policy::PolicyRegistry;
+use agentic_rs::providers::claude::ClaudeProvider;
+use agentic_rs::runtime::{Runtime, RuntimeConfig};
+use agentic_rs::store::InMemoryStore;
+use agentic_rs::tool::ToolRegistry;
+use agentic_rs::tools::discord::DiscordConfig;
 
 fn system_prompt(bot_name: &str) -> String {
     format!(
@@ -47,8 +47,8 @@ async fn main() {
         std::process::exit(1);
     });
 
-    let model = std::env::var("CLAW_MODEL").unwrap_or_else(|_| "claude-sonnet-4-5-20250929".into());
-    let bot_name = std::env::var("BOT_NAME").unwrap_or_else(|_| "ClawBot".into());
+    let model = std::env::var("AGENTIC_MODEL").unwrap_or_else(|_| "claude-sonnet-4-5-20250929".into());
+    let bot_name = std::env::var("BOT_NAME").unwrap_or_else(|_| "AgenticBot".into());
 
     let dc = DiscordConfig::new(&discord_token);
 
@@ -56,7 +56,7 @@ async fn main() {
     let store = Arc::new(InMemoryStore::new());
 
     let mut tools = ToolRegistry::new();
-    claw_lib::tools::discord::register_tools(&mut tools, &dc);
+    agentic_rs::tools::discord::register_tools(&mut tools, &dc);
 
     let config = RuntimeConfig {
         system_prompt: Some(system_prompt(&bot_name)),

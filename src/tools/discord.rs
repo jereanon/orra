@@ -52,7 +52,7 @@ impl DiscordConfig {
             .request(method, self.url(path))
             .header("Authorization", format!("Bot {}", self.token))
             .header("Content-Type", "application/json")
-            .header("User-Agent", "claw-lib")
+            .header("User-Agent", "agentic-rs")
     }
 }
 

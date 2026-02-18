@@ -1,5 +1,5 @@
 [package]
-name = "claw-lib"
+name = "agentic-rs"
 version = "0.1.0"
 edition = "2021"
 description = "Context-aware agent session management for any application"

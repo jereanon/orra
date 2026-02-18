@@ -1,12 +1,12 @@
-# claw-lib
+# agentic
 
-A Rust library for adding AI assistant capabilities to any application. You bring the tools and resources — claw-lib handles context management, session isolation, and the agent execution loop.
+A Rust library for adding AI assistant capabilities to any application. You bring the tools and resources — agentic handles context management, session isolation, and the agent execution loop.
 
 ## Why this exists
 
 Most AI/LLM libraries focus on model abstraction or prompt chaining. What they don't give you is a good answer to: "How do I run this for multiple users without their conversations bleeding into each other? How do I control which tools each user can access? How do I keep context from blowing past the token limit?"
 
-claw-lib is built around those problems. It's designed for applications where AI is a feature, not the whole product — think project management tools, internal dashboards, customer support platforms, developer tooling. Places where you already have domain-specific data and operations, and you want users to interact with them through natural language.
+agentic is built around those problems. It's designed for applications where AI is a feature, not the whole product — think project management tools, internal dashboards, customer support platforms, developer tooling. Places where you already have domain-specific data and operations, and you want users to interact with them through natural language.
 
 ## What it does
 
@@ -59,18 +59,18 @@ The library ships with optional tool sets you can drop into your application. Ea
 **Discord** (`discord` feature) — Six tools for building Discord bots: `list_channels`, `get_channel_info`, `get_messages`, `send_message`, `reply_to_message`, `get_guild_info`. Uses Discord API v10 with bot token auth.
 
 ```rust
-use claw_lib::tools::discord::DiscordConfig;
+use agentic_rs::tools::discord::DiscordConfig;
 
 let dc = DiscordConfig::new("your-bot-token");
 let mut tools = ToolRegistry::new();
-claw_lib::tools::discord::register_tools(&mut tools, &dc);
+agentic_rs::tools::discord::register_tools(&mut tools, &dc);
 ```
 
 **Document Retrieval** (`documents` feature) — Three tools for searching and reading documents: `search_documents`, `read_document`, `list_documents`. You provide a `DocumentStore` implementation — the library includes `InMemoryDocumentStore` with TF-IDF search for prototyping, and you can swap in a vector database or full-text search engine for production.
 
 ```rust
 use std::sync::Arc;
-use claw_lib::tools::documents::{InMemoryDocumentStore, Document, register_tools};
+use agentic_rs::tools::documents::{InMemoryDocumentStore, Document, register_tools};
 
 let store = Arc::new(InMemoryDocumentStore::new());
 // Load your documents into the store...
@@ -81,11 +81,11 @@ register_tools(&mut tools, store);
 **GitHub Issues** (`github` feature) — Six tools for managing GitHub issues via the REST API. Configure with a token and repo, register into your `ToolRegistry`, done.
 
 ```rust
-use claw_lib::tools::github::GitHubConfig;
+use agentic_rs::tools::github::GitHubConfig;
 
 let gh = GitHubConfig::new("your-github-token", "owner", "repo");
 let mut tools = ToolRegistry::new();
-claw_lib::tools::github::register_tools(&mut tools, &gh);
+agentic_rs::tools::github::register_tools(&mut tools, &gh);
 ```
 
 ## Quick start
@@ -94,21 +94,21 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-claw-lib = { path = "." }  # or from your registry
+agentic-rs = { path = "." }  # or from your registry
 ```
 
 Basic usage:
 
 ```rust
 use std::sync::Arc;
-use claw_lib::context::CharEstimator;
-use claw_lib::message::Message;
-use claw_lib::namespace::Namespace;
-use claw_lib::policy::PolicyRegistry;
-use claw_lib::providers::claude::ClaudeProvider;
-use claw_lib::runtime::{Runtime, RuntimeConfig};
-use claw_lib::store::InMemoryStore;
-use claw_lib::tool::ToolRegistry;
+use agentic_rs::context::CharEstimator;
+use agentic_rs::message::Message;
+use agentic_rs::namespace::Namespace;
+use agentic_rs::policy::PolicyRegistry;
+use agentic_rs::providers::claude::ClaudeProvider;
+use agentic_rs::runtime::{Runtime, RuntimeConfig};
+use agentic_rs::store::InMemoryStore;
+use agentic_rs::tool::ToolRegistry;
 
 let provider = Arc::new(ClaudeProvider::new("your-api-key", "claude-sonnet-4-5-20250929"));
 let store = Arc::new(InMemoryStore::new());
@@ -161,11 +161,8 @@ ANTHROPIC_API_KEY=... GITHUB_TOKEN=... cargo run --features claude,github --exam
 
 Early development. The core abstractions are in place and tested, but the API will evolve. Notable things not yet implemented:
 
-- Streaming responses
 - LLM-based context compaction (summarizing old messages instead of dropping them)
-- Filesystem session store
 - OpenAI-compatible provider
-- Async tool execution (parallel tool calls)
 
 ## License
 

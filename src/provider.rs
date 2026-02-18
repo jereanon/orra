@@ -43,6 +43,40 @@ pub trait Provider: Send + Sync {
     async fn complete(&self, request: CompletionRequest) -> Result<CompletionResponse, ProviderError>;
 }
 
+/// Events emitted by a streaming provider.
+#[derive(Debug, Clone)]
+pub enum StreamEvent {
+    /// A chunk of text from the assistant's response.
+    TextDelta(String),
+
+    /// A tool call has started being generated.
+    ToolCallStart { id: String, name: String },
+
+    /// A chunk of tool call arguments JSON.
+    ToolCallDelta { id: String, arguments_delta: String },
+
+    /// The stream is complete.
+    Done {
+        usage: Usage,
+        finish_reason: FinishReason,
+    },
+
+    /// An error occurred during streaming.
+    Error(String),
+}
+
+/// A provider that supports streaming responses.
+///
+/// Streaming providers must also implement the non-streaming `Provider` trait
+/// as a fallback.
+#[async_trait]
+pub trait StreamingProvider: Provider {
+    async fn stream(
+        &self,
+        request: CompletionRequest,
+    ) -> Result<tokio::sync::mpsc::Receiver<StreamEvent>, ProviderError>;
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ProviderError {
     #[error("authentication failed: {0}")]
@@ -154,6 +188,53 @@ mod tests {
                 assert_eq!(retry_after_ms, Some(1000));
             }
             _ => panic!("expected RateLimited error"),
+        }
+    }
+
+    #[test]
+    fn stream_event_text_delta() {
+        let event = StreamEvent::TextDelta("hello".into());
+        match event {
+            StreamEvent::TextDelta(s) => assert_eq!(s, "hello"),
+            _ => panic!("expected TextDelta"),
+        }
+    }
+
+    #[test]
+    fn stream_event_tool_call_lifecycle() {
+        let start = StreamEvent::ToolCallStart {
+            id: "c1".into(),
+            name: "search".into(),
+        };
+        let delta = StreamEvent::ToolCallDelta {
+            id: "c1".into(),
+            arguments_delta: "{\"q\":".into(),
+        };
+        let done = StreamEvent::Done {
+            usage: Usage { input_tokens: 10, output_tokens: 5 },
+            finish_reason: FinishReason::ToolUse,
+        };
+
+        match start {
+            StreamEvent::ToolCallStart { id, name } => {
+                assert_eq!(id, "c1");
+                assert_eq!(name, "search");
+            }
+            _ => panic!("expected ToolCallStart"),
+        }
+        match delta {
+            StreamEvent::ToolCallDelta { id, arguments_delta } => {
+                assert_eq!(id, "c1");
+                assert_eq!(arguments_delta, "{\"q\":");
+            }
+            _ => panic!("expected ToolCallDelta"),
+        }
+        match done {
+            StreamEvent::Done { usage, finish_reason } => {
+                assert_eq!(usage.total_tokens(), 15);
+                assert_eq!(finish_reason, FinishReason::ToolUse);
+            }
+            _ => panic!("expected Done"),
         }
     }
 }

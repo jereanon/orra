@@ -3,6 +3,7 @@ pub mod message;
 pub mod namespace;
 pub mod policy;
 pub mod provider;
+pub mod providers;
 pub mod runtime;
 pub mod store;
 pub mod tool;

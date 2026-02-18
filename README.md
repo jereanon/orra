@@ -49,11 +49,22 @@ claw-lib is built around those problems. It's designed for applications where AI
 - **`runtime`** — The agent loop: load session, build context, call LLM, execute tools, persist
 - **`providers::claude`** — Ready-to-use Claude API implementation (feature-gated)
 - **`tools::github`** — GitHub Issues tools: list, search, get, create, comment, close (feature-gated)
+- **`tools::discord`** — Discord bot tools: channels, messages, replies, guild info (feature-gated)
 - **`tools::documents`** — Document retrieval tools with pluggable search backend (feature-gated)
 
 ## Built-in tools
 
 The library ships with optional tool sets you can drop into your application. Each lives behind a feature flag so you only pull in the dependencies you need.
+
+**Discord** (`discord` feature) — Six tools for building Discord bots: `list_channels`, `get_channel_info`, `get_messages`, `send_message`, `reply_to_message`, `get_guild_info`. Uses Discord API v10 with bot token auth.
+
+```rust
+use claw_lib::tools::discord::DiscordConfig;
+
+let dc = DiscordConfig::new("your-bot-token");
+let mut tools = ToolRegistry::new();
+claw_lib::tools::discord::register_tools(&mut tools, &dc);
+```
 
 **Document Retrieval** (`documents` feature) — Three tools for searching and reading documents: `search_documents`, `read_document`, `list_documents`. You provide a `DocumentStore` implementation — the library includes `InMemoryDocumentStore` with TF-IDF search for prototyping, and you can swap in a vector database or full-text search engine for production.
 
@@ -128,6 +139,14 @@ A CLI project management assistant with an in-memory kanban board. Shows multi-u
 
 ```bash
 ANTHROPIC_API_KEY=... cargo run --features claude --example kanban
+```
+
+### [Discord bot](examples/discord_bot.rs)
+
+An interactive CLI for testing a Discord bot. The bot can read channel history, send messages, reply to conversations, and list channels in your server. Swap the stdin loop for a Gateway WebSocket listener to make it live.
+
+```bash
+ANTHROPIC_API_KEY=... DISCORD_TOKEN=... DISCORD_GUILD_ID=... cargo run --features claude,discord --example discord_bot
 ```
 
 ### [GitHub issues assistant](examples/github_issues.rs)

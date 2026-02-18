@@ -1,5 +1,7 @@
 pub mod context;
 pub mod hook;
+#[cfg(feature = "mcp")]
+pub mod mcp;
 pub mod message;
 pub mod namespace;
 pub mod policy;

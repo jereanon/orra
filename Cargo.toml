@@ -21,7 +21,15 @@ wiremock = "0.6"
 reqwest = { version = "0.12", features = ["json"] }
 
 [features]
-default = ["claude"]
+default = []
 claude = ["reqwest"]
 documents = []
 github = ["reqwest"]
+
+[[example]]
+name = "kanban"
+required-features = ["claude"]
+
+[[example]]
+name = "github_issues"
+required-features = ["claude", "github"]

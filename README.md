@@ -127,7 +127,7 @@ println!("{}", result.final_message.content);
 A CLI project management assistant with an in-memory kanban board. Shows multi-user namespacing, tool policies (viewer vs. member roles), and session persistence across user switches.
 
 ```bash
-ANTHROPIC_API_KEY=... cargo run --example kanban
+ANTHROPIC_API_KEY=... cargo run --features claude --example kanban
 ```
 
 ### [GitHub issues assistant](examples/github_issues.rs)
@@ -135,7 +135,7 @@ ANTHROPIC_API_KEY=... cargo run --example kanban
 A CLI for managing GitHub issues through natural language. Uses the built-in GitHub tools from the library.
 
 ```bash
-ANTHROPIC_API_KEY=... GITHUB_TOKEN=... cargo run --features github --example github_issues -- owner/repo
+ANTHROPIC_API_KEY=... GITHUB_TOKEN=... cargo run --features claude,github --example github_issues -- owner/repo
 ```
 
 ## Status

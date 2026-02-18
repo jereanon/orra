@@ -32,5 +32,9 @@ name = "kanban"
 required-features = ["claude"]
 
 [[example]]
+name = "discord_bot"
+required-features = ["claude", "discord"]
+
+[[example]]
 name = "github_issues"
 required-features = ["claude", "github"]

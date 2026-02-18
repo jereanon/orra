@@ -3,6 +3,7 @@ use std::sync::Arc;
 use crate::context::{ContextBudget, ContextWindow, Tokenizer};
 use crate::message::{Message, ToolCall, ToolResult};
 use crate::namespace::Namespace;
+use crate::policy::PolicyRegistry;
 use crate::provider::{CompletionRequest, CompletionResponse, FinishReason, Provider, ProviderError, Usage};
 use crate::store::{Session, SessionStore, StoreError};
 use crate::tool::ToolRegistry;
@@ -57,6 +58,7 @@ pub struct Runtime<T: Tokenizer> {
     provider: Arc<dyn Provider>,
     store: Arc<dyn SessionStore>,
     tools: ToolRegistry,
+    policies: PolicyRegistry,
     context_window: ContextWindow<T>,
     config: RuntimeConfig,
 }
@@ -66,6 +68,7 @@ impl<T: Tokenizer> Runtime<T> {
         provider: Arc<dyn Provider>,
         store: Arc<dyn SessionStore>,
         tools: ToolRegistry,
+        policies: PolicyRegistry,
         tokenizer: T,
         config: RuntimeConfig,
     ) -> Self {
@@ -74,6 +77,7 @@ impl<T: Tokenizer> Runtime<T> {
             provider,
             store,
             tools,
+            policies,
             context_window,
             config,
         }
@@ -97,7 +101,9 @@ impl<T: Tokenizer> Runtime<T> {
 
         for _ in 0..self.config.max_turns {
             let messages = self.build_messages(&session);
-            let tool_defs = self.tools.definitions();
+            let all_defs = self.tools.definitions();
+            let policy = self.policies.resolve(namespace);
+            let tool_defs = policy.filter_definitions(&all_defs);
 
             let request = CompletionRequest {
                 messages,
@@ -265,7 +271,7 @@ mod tests {
     ) -> Runtime<CharEstimator> {
         let provider = Arc::new(MockProvider::new(responses));
         let store = Arc::new(InMemoryStore::new());
-        Runtime::new(provider, store, tools, CharEstimator::default(), config)
+        Runtime::new(provider, store, tools, PolicyRegistry::default(), CharEstimator::default(), config)
     }
 
     #[tokio::test]
@@ -408,6 +414,7 @@ mod tests {
                 provider,
                 store.clone(),
                 ToolRegistry::new(),
+                PolicyRegistry::default(),
                 CharEstimator::default(),
                 RuntimeConfig::default(),
             );
@@ -430,6 +437,7 @@ mod tests {
                 provider,
                 store.clone(),
                 ToolRegistry::new(),
+                PolicyRegistry::default(),
                 CharEstimator::default(),
                 RuntimeConfig::default(),
             );
@@ -476,6 +484,7 @@ mod tests {
             provider.clone(),
             Arc::new(InMemoryStore::new()),
             ToolRegistry::new(),
+            PolicyRegistry::default(),
             CharEstimator::default(),
             config,
         );
@@ -509,6 +518,7 @@ mod tests {
             provider1,
             store.clone(),
             ToolRegistry::new(),
+            PolicyRegistry::default(),
             CharEstimator::default(),
             RuntimeConfig::default(),
         );
@@ -518,6 +528,7 @@ mod tests {
             provider2,
             store.clone(),
             ToolRegistry::new(),
+            PolicyRegistry::default(),
             CharEstimator::default(),
             RuntimeConfig::default(),
         );
@@ -530,5 +541,71 @@ mod tests {
         assert_eq!(alice_session.messages[1].content, "Response for Alice");
         assert_eq!(bob_session.messages[0].content, "Hi from Bob");
         assert_eq!(bob_session.messages[1].content, "Response for Bob");
+    }
+
+    #[tokio::test]
+    async fn policy_filters_tools_sent_to_provider() {
+        use crate::policy::ToolPolicy;
+
+        struct CapturingProvider {
+            seen_tools: tokio::sync::Mutex<Vec<Vec<String>>>,
+        }
+
+        #[async_trait]
+        impl Provider for CapturingProvider {
+            async fn complete(&self, request: CompletionRequest) -> Result<CompletionResponse, ProviderError> {
+                let tool_names: Vec<String> = request.tools.iter().map(|t| t.name.clone()).collect();
+                self.seen_tools.lock().await.push(tool_names);
+                Ok(CompletionResponse {
+                    message: Message::assistant("Done"),
+                    usage: Usage::default(),
+                    finish_reason: FinishReason::Stop,
+                })
+            }
+        }
+
+        let provider = Arc::new(CapturingProvider {
+            seen_tools: tokio::sync::Mutex::new(Vec::new()),
+        });
+
+        let mut tools = ToolRegistry::new();
+        tools.register(Box::new(UppercaseTool));
+
+        struct ReadTool;
+        #[async_trait]
+        impl Tool for ReadTool {
+            fn definition(&self) -> ToolDefinition {
+                ToolDefinition {
+                    name: "read".into(),
+                    description: "Read a file".into(),
+                    input_schema: serde_json::json!({"type": "object"}),
+                }
+            }
+            async fn execute(&self, _input: serde_json::Value) -> Result<String, ToolError> {
+                Ok("file contents".into())
+            }
+        }
+        tools.register(Box::new(ReadTool));
+
+        // Only allow "read" for the restricted namespace
+        let mut policies = PolicyRegistry::default();
+        let restricted_ns = Namespace::new("restricted");
+        policies.set_policy(&restricted_ns, ToolPolicy::AllowList(vec!["read".into()]));
+
+        let runtime = Runtime::new(
+            provider.clone(),
+            Arc::new(InMemoryStore::new()),
+            tools,
+            policies,
+            CharEstimator::default(),
+            RuntimeConfig::default(),
+        );
+
+        // Run in the restricted namespace
+        runtime.run(&restricted_ns, Message::user("Hello")).await.unwrap();
+
+        let seen = provider.seen_tools.lock().await;
+        assert_eq!(seen.len(), 1);
+        assert_eq!(seen[0], vec!["read".to_string()]);
     }
 }

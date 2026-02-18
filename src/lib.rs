@@ -1,4 +1,5 @@
 pub mod context;
+pub mod hook;
 pub mod message;
 pub mod namespace;
 pub mod policy;

@@ -6,6 +6,7 @@ use crate::namespace::Namespace;
 use crate::policy::PolicyRegistry;
 use crate::provider::{CompletionRequest, CompletionResponse, FinishReason, Provider, ProviderError, Usage};
 use crate::store::{Session, SessionStore, StoreError};
+use crate::hook::HookRegistry;
 use crate::tool::ToolRegistry;
 
 #[derive(Debug, Clone)]
@@ -63,6 +64,7 @@ pub struct Runtime<T: Tokenizer> {
     policies: PolicyRegistry,
     context_window: ContextWindow<T>,
     config: RuntimeConfig,
+    hooks: HookRegistry,
 }
 
 impl<T: Tokenizer> Runtime<T> {
@@ -82,7 +84,12 @@ impl<T: Tokenizer> Runtime<T> {
             policies,
             context_window,
             config,
+            hooks: HookRegistry::default(),
         }
+    }
+
+    pub fn set_hooks(&mut self, hooks: HookRegistry) {
+        self.hooks = hooks;
     }
 
     pub async fn run(
@@ -96,6 +103,8 @@ impl<T: Tokenizer> Runtime<T> {
             .await?
             .unwrap_or_else(|| Session::new(namespace.clone()));
 
+        self.hooks.dispatch_after_session_load(namespace, &session).await;
+
         session.push_message(user_message);
 
         let mut turns = Vec::new();
@@ -107,14 +116,19 @@ impl<T: Tokenizer> Runtime<T> {
             let policy = self.policies.resolve(namespace);
             let tool_defs = policy.filter_definitions(&all_defs);
 
-            let request = CompletionRequest {
+            let mut request = CompletionRequest {
                 messages,
                 tools: tool_defs,
                 max_tokens: self.config.max_tokens,
                 temperature: self.config.temperature,
             };
 
+            self.hooks.dispatch_before_provider_call(&mut request).await;
+
             let response = self.provider.complete(request).await?;
+
+            self.hooks.dispatch_after_provider_call(&response).await;
+
             total_usage.input_tokens += response.usage.input_tokens;
             total_usage.output_tokens += response.usage.output_tokens;
 
@@ -136,6 +150,7 @@ impl<T: Tokenizer> Runtime<T> {
                     tool_results: vec![],
                 });
 
+                self.hooks.dispatch_before_session_save(namespace, &mut session).await;
                 self.store.save(&session).await?;
 
                 return Ok(RunResult {
@@ -147,6 +162,7 @@ impl<T: Tokenizer> Runtime<T> {
         }
 
         // Exceeded max turns — save what we have and return an error
+        self.hooks.dispatch_before_session_save(namespace, &mut session).await;
         self.store.save(&session).await?;
         Err(RuntimeError::MaxTurnsExceeded(self.config.max_turns))
     }
@@ -169,7 +185,10 @@ impl<T: Tokenizer> Runtime<T> {
     }
 
     async fn execute_single_tool_call(&self, call: &ToolCall) -> ToolResult {
-        if let Some(tool) = self.tools.get(&call.name) {
+        let mut call = call.clone();
+        self.hooks.dispatch_before_tool_call(&mut call).await;
+
+        let mut result = if let Some(tool) = self.tools.get(&call.name) {
             match tool.execute(call.arguments.clone()).await {
                 Ok(content) => {
                     let content = self.context_window.truncate_tool_result(&content);
@@ -191,7 +210,10 @@ impl<T: Tokenizer> Runtime<T> {
                 content: format!("unknown tool: {}", call.name),
                 is_error: true,
             }
-        }
+        };
+
+        self.hooks.dispatch_after_tool_call(&call, &mut result).await;
+        result
     }
 
     async fn execute_tool_calls(&self, tool_calls: &[ToolCall]) -> Vec<ToolResult> {
@@ -828,5 +850,184 @@ mod tests {
         let results = &result.turns[0].tool_results;
         assert_eq!(results[0].call_id, "first");
         assert_eq!(results[1].call_id, "second");
+    }
+
+    // --- Hook integration tests ---
+
+    #[tokio::test]
+    async fn hooks_called_during_run() {
+        use crate::hook::{Hook, HookRegistry};
+        use std::sync::atomic::AtomicUsize;
+
+        struct CountHook {
+            before_provider: AtomicUsize,
+            after_provider: AtomicUsize,
+            before_save: AtomicUsize,
+            after_load: AtomicUsize,
+        }
+
+        #[async_trait]
+        impl Hook for CountHook {
+            async fn after_session_load(&self, _ns: &Namespace, _s: &Session) {
+                self.after_load.fetch_add(1, Ordering::SeqCst);
+            }
+            async fn before_provider_call(&self, _req: &mut CompletionRequest) {
+                self.before_provider.fetch_add(1, Ordering::SeqCst);
+            }
+            async fn after_provider_call(&self, _resp: &CompletionResponse) {
+                self.after_provider.fetch_add(1, Ordering::SeqCst);
+            }
+            async fn before_session_save(&self, _ns: &Namespace, _s: &mut Session) {
+                self.before_save.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+
+        let hook = Arc::new(CountHook {
+            before_provider: AtomicUsize::new(0),
+            after_provider: AtomicUsize::new(0),
+            before_save: AtomicUsize::new(0),
+            after_load: AtomicUsize::new(0),
+        });
+
+        let mut hooks = HookRegistry::new();
+        hooks.register(hook.clone());
+
+        let responses = vec![CompletionResponse {
+            message: Message::assistant("Done"),
+            usage: Usage::default(),
+            finish_reason: FinishReason::Stop,
+        }];
+
+        let mut runtime = make_runtime(responses, ToolRegistry::new(), RuntimeConfig::default());
+        runtime.set_hooks(hooks);
+
+        let ns = Namespace::new("test");
+        runtime.run(&ns, Message::user("Hi")).await.unwrap();
+
+        assert_eq!(hook.after_load.load(Ordering::SeqCst), 1);
+        assert_eq!(hook.before_provider.load(Ordering::SeqCst), 1);
+        assert_eq!(hook.after_provider.load(Ordering::SeqCst), 1);
+        assert_eq!(hook.before_save.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn hook_modifies_provider_request() {
+        use crate::hook::{Hook, HookRegistry};
+
+        struct ForceTemp;
+
+        #[async_trait]
+        impl Hook for ForceTemp {
+            async fn before_provider_call(&self, request: &mut CompletionRequest) {
+                request.temperature = Some(0.0);
+            }
+        }
+
+        struct CapturingProvider {
+            temps: tokio::sync::Mutex<Vec<Option<f32>>>,
+        }
+
+        #[async_trait]
+        impl Provider for CapturingProvider {
+            async fn complete(&self, request: CompletionRequest) -> Result<CompletionResponse, ProviderError> {
+                self.temps.lock().await.push(request.temperature);
+                Ok(CompletionResponse {
+                    message: Message::assistant("Ok"),
+                    usage: Usage::default(),
+                    finish_reason: FinishReason::Stop,
+                })
+            }
+        }
+
+        let provider = Arc::new(CapturingProvider {
+            temps: tokio::sync::Mutex::new(Vec::new()),
+        });
+
+        let mut hooks = HookRegistry::new();
+        hooks.register(Arc::new(ForceTemp));
+
+        let config = RuntimeConfig {
+            temperature: Some(0.7),
+            ..RuntimeConfig::default()
+        };
+
+        let mut runtime = Runtime::new(
+            provider.clone(),
+            Arc::new(InMemoryStore::new()),
+            ToolRegistry::new(),
+            PolicyRegistry::default(),
+            CharEstimator::default(),
+            config,
+        );
+        runtime.set_hooks(hooks);
+
+        let ns = Namespace::new("test");
+        runtime.run(&ns, Message::user("Hi")).await.unwrap();
+
+        let temps = provider.temps.lock().await;
+        assert_eq!(temps[0], Some(0.0)); // Hook overrode 0.7 to 0.0
+    }
+
+    #[tokio::test]
+    async fn hook_modifies_tool_result() {
+        use crate::hook::{Hook, HookRegistry};
+
+        struct RedactHook;
+
+        #[async_trait]
+        impl Hook for RedactHook {
+            async fn after_tool_call(&self, _call: &ToolCall, result: &mut ToolResult) {
+                result.content = result.content.replace("secret", "[REDACTED]");
+            }
+        }
+
+        struct SecretTool;
+
+        #[async_trait]
+        impl Tool for SecretTool {
+            fn definition(&self) -> ToolDefinition {
+                ToolDefinition {
+                    name: "get_secret".into(),
+                    description: "Returns a secret".into(),
+                    input_schema: serde_json::json!({"type": "object"}),
+                }
+            }
+            async fn execute(&self, _input: serde_json::Value) -> Result<String, ToolError> {
+                Ok("the secret is 42".into())
+            }
+        }
+
+        let tool_call = ToolCall {
+            id: "c1".into(),
+            name: "get_secret".into(),
+            arguments: serde_json::json!({}),
+        };
+
+        let responses = vec![
+            CompletionResponse {
+                message: Message::assistant_with_tool_calls("Getting.", vec![tool_call]),
+                usage: Usage::default(),
+                finish_reason: FinishReason::ToolUse,
+            },
+            CompletionResponse {
+                message: Message::assistant("Here you go."),
+                usage: Usage::default(),
+                finish_reason: FinishReason::Stop,
+            },
+        ];
+
+        let mut tools = ToolRegistry::new();
+        tools.register(Box::new(SecretTool));
+
+        let mut hooks = HookRegistry::new();
+        hooks.register(Arc::new(RedactHook));
+
+        let mut runtime = make_runtime(responses, tools, RuntimeConfig::default());
+        runtime.set_hooks(hooks);
+
+        let ns = Namespace::new("test");
+        let result = runtime.run(&ns, Message::user("Show secret")).await.unwrap();
+
+        assert_eq!(result.turns[0].tool_results[0].content, "the [REDACTED] is 42");
     }
 }

@@ -1,3 +1,6 @@
+#[cfg(feature = "discord")]
+pub mod discord;
+
 #[cfg(feature = "documents")]
 pub mod documents;
 

@@ -20,6 +20,7 @@ futures = { version = "0.3", default-features = false, features = ["alloc"], opt
 tokio = { version = "1", features = ["full", "test-util"] }
 wiremock = "0.6"
 reqwest = { version = "0.12", features = ["json"] }
+tempfile = "3"
 
 [features]
 default = []
@@ -28,6 +29,7 @@ discord = ["reqwest"]
 documents = []
 github = ["reqwest"]
 parallel-tools = ["futures"]
+file-store = []
 
 [[example]]
 name = "kanban"

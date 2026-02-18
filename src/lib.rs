@@ -6,5 +6,6 @@ pub mod provider;
 pub mod providers;
 pub mod runtime;
 pub mod store;
+pub mod stores;
 pub mod tool;
 pub mod tools;

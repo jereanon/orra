@@ -39,15 +39,19 @@ impl DiscordConfig {
         self
     }
 
+    pub fn token(&self) -> &str {
+        &self.token
+    }
+
     pub fn api_base(&self) -> &str {
         &self.api_base
     }
 
-    fn url(&self, path: &str) -> String {
+    pub(crate) fn url(&self, path: &str) -> String {
         format!("{}/{}", self.api_base, path)
     }
 
-    fn request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
+    pub(crate) fn request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
         self.client
             .request(method, self.url(path))
             .header("Authorization", format!("Bot {}", self.token))

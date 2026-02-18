@@ -51,6 +51,8 @@ agentic is built around those problems. It's designed for applications where AI 
 - **`tools::github`** — GitHub Issues tools: list, search, get, create, comment, close (feature-gated)
 - **`tools::discord`** — Discord bot tools: channels, messages, replies, guild info (feature-gated)
 - **`tools::documents`** — Document retrieval tools with pluggable search backend (feature-gated)
+- **`channels`** — `Channel` trait and `ChannelAdapter` for transport-agnostic message routing
+- **`channels::discord`** — Discord Gateway WebSocket channel implementation (feature-gated)
 
 ## Built-in tools
 
@@ -143,10 +145,12 @@ ANTHROPIC_API_KEY=... cargo run --features claude --example kanban
 
 ### [Discord bot](examples/discord_bot.rs)
 
-An interactive CLI for testing a Discord bot. The bot can read channel history, send messages, reply to conversations, and list channels in your server. Swap the stdin loop for a Gateway WebSocket listener to make it live.
+A live Discord bot that connects to the Gateway via WebSocket. It listens for @mentions (or all messages with `--all`), processes them through the agent runtime, and replies in the same channel. Uses the `DiscordChannel` + `ChannelAdapter` pattern.
 
 ```bash
-ANTHROPIC_API_KEY=... DISCORD_TOKEN=... DISCORD_GUILD_ID=... cargo run --features claude,discord --example discord_bot
+ANTHROPIC_API_KEY=... DISCORD_TOKEN=... cargo run --features claude,discord --example discord_bot
+# Pass --all to respond to all messages, not just @mentions:
+ANTHROPIC_API_KEY=... DISCORD_TOKEN=... cargo run --features claude,discord --example discord_bot -- --all
 ```
 
 ### [GitHub issues assistant](examples/github_issues.rs)

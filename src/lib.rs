@@ -1,4 +1,4 @@
-pub mod channel;
+pub mod channels;
 pub mod context;
 pub mod hook;
 #[cfg(feature = "mcp")]

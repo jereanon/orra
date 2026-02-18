@@ -1,9 +1,8 @@
-use std::io::{self, Write};
 use std::sync::Arc;
 
+use agentic_rs::channels::discord::{DiscordChannel, DiscordChannelConfig, MessageFilter};
+use agentic_rs::channels::ChannelAdapter;
 use agentic_rs::context::CharEstimator;
-use agentic_rs::message::Message;
-use agentic_rs::namespace::Namespace;
 use agentic_rs::policy::PolicyRegistry;
 use agentic_rs::providers::claude::ClaudeProvider;
 use agentic_rs::runtime::{Runtime, RuntimeConfig};
@@ -22,12 +21,6 @@ fn system_prompt(bot_name: &str) -> String {
     )
 }
 
-/// Interactive CLI mode — type messages and see how the bot would respond.
-///
-/// This is useful for testing your bot's behavior before connecting it to
-/// a live Discord server. For a real bot, you'd replace this with a
-/// Gateway WebSocket listener (using serenity, twilight, etc.) that
-/// feeds incoming messages into `runtime.run()`.
 #[tokio::main]
 async fn main() {
     let api_key = std::env::var("ANTHROPIC_API_KEY").unwrap_or_else(|_| {
@@ -41,14 +34,16 @@ async fn main() {
         std::process::exit(1);
     });
 
-    let guild_id = std::env::var("DISCORD_GUILD_ID").unwrap_or_else(|_| {
-        eprintln!("Error: DISCORD_GUILD_ID not set.");
-        eprintln!("Right-click your server in Discord → Copy Server ID");
-        std::process::exit(1);
-    });
-
-    let model = std::env::var("AGENTIC_MODEL").unwrap_or_else(|_| "claude-sonnet-4-5-20250929".into());
+    let model =
+        std::env::var("AGENTIC_MODEL").unwrap_or_else(|_| "claude-sonnet-4-5-20250929".into());
     let bot_name = std::env::var("BOT_NAME").unwrap_or_else(|_| "AgenticBot".into());
+
+    // Pass --all to process all messages, default is mentions only
+    let filter = if std::env::args().any(|a| a == "--all") {
+        MessageFilter::All
+    } else {
+        MessageFilter::MentionsOnly
+    };
 
     let dc = DiscordConfig::new(&discord_token);
 
@@ -75,63 +70,27 @@ async fn main() {
         config,
     );
 
-    let ns = Namespace::new("discord").child(&guild_id);
+    // Set up the Discord Gateway channel
+    let channel_config = DiscordChannelConfig::new(dc).with_filter(filter);
+    let channel = DiscordChannel::new(channel_config);
 
-    println!("=== {} — Discord Bot (Interactive Mode) ===", bot_name);
-    println!("Guild: {}", guild_id);
+    println!("=== {} — Discord Bot ===", bot_name);
+    println!("Connecting to Discord Gateway...");
+
+    match channel.connect().await {
+        Ok(()) => println!("Connected! Listening for messages..."),
+        Err(e) => {
+            eprintln!("Failed to connect: {}", e);
+            std::process::exit(1);
+        }
+    }
+
+    println!("Press Ctrl+C to stop.");
     println!();
-    println!("Talk to the bot as if you're a user in the Discord server.");
-    println!("The bot can use Discord tools to read/send messages in your server.");
-    println!("Type /quit to exit.");
-    println!();
 
-    let stdin = io::stdin();
-    loop {
-        print!("you> ");
-        io::stdout().flush().unwrap();
-
-        let mut input = String::new();
-        if stdin.read_line(&mut input).unwrap() == 0 {
-            break;
-        }
-        let input = input.trim();
-        if input.is_empty() {
-            continue;
-        }
-        if input == "/quit" || input == "/exit" {
-            println!("Goodbye!");
-            break;
-        }
-
-        match runtime.run(&ns, Message::user(input)).await {
-            Ok(result) => {
-                // Show tool calls for visibility
-                for turn in &result.turns {
-                    for tc in &turn.response.message.tool_calls {
-                        println!(
-                            "  [{}({})]",
-                            tc.name,
-                            serde_json::to_string(&tc.arguments).unwrap_or_default()
-                        );
-                    }
-                    for tr in &turn.tool_results {
-                        if tr.is_error {
-                            println!("  [tool error: {}]", tr.content);
-                        }
-                    }
-                }
-                println!();
-                println!("bot> {}", result.final_message.content);
-                println!(
-                    "  ({} input, {} output tokens)",
-                    result.total_usage.input_tokens, result.total_usage.output_tokens
-                );
-                println!();
-            }
-            Err(e) => {
-                eprintln!("Error: {}", e);
-                println!();
-            }
-        }
+    // Run the channel adapter loop — receives Discord messages, processes
+    // them through the runtime, and sends responses back to Discord.
+    if let Err(e) = ChannelAdapter::run(&channel, &runtime).await {
+        eprintln!("Runtime error: {}", e);
     }
 }

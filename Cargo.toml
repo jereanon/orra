@@ -23,3 +23,4 @@ reqwest = { version = "0.12", features = ["json"] }
 [features]
 default = ["claude"]
 claude = ["reqwest"]
+github = ["reqwest"]

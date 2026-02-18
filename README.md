@@ -48,6 +48,21 @@ claw-lib is built around those problems. It's designed for applications where AI
 - **`policy`** — Per-namespace tool visibility with hierarchical inheritance
 - **`runtime`** — The agent loop: load session, build context, call LLM, execute tools, persist
 - **`providers::claude`** — Ready-to-use Claude API implementation (feature-gated)
+- **`tools::github`** — GitHub Issues tools: list, search, get, create, comment, close (feature-gated)
+
+## Built-in tools
+
+The library ships with optional tool sets you can drop into your application. Each lives behind a feature flag so you only pull in the dependencies you need.
+
+**GitHub Issues** (`github` feature) — Six tools for managing GitHub issues via the REST API. Configure with a token and repo, register into your `ToolRegistry`, done.
+
+```rust
+use claw_lib::tools::github::GitHubConfig;
+
+let gh = GitHubConfig::new("your-github-token", "owner", "repo");
+let mut tools = ToolRegistry::new();
+claw_lib::tools::github::register_tools(&mut tools, &gh);
+```
 
 ## Quick start
 
@@ -104,15 +119,15 @@ ANTHROPIC_API_KEY=... cargo run --example kanban
 
 ### [GitHub issues assistant](examples/github_issues.rs)
 
-A CLI for managing GitHub issues through natural language. Six tools backed by the GitHub REST API — list, search, get details, create, comment, and close issues.
+A CLI for managing GitHub issues through natural language. Uses the built-in GitHub tools from the library.
 
 ```bash
-ANTHROPIC_API_KEY=... GITHUB_TOKEN=... cargo run --example github_issues -- owner/repo
+ANTHROPIC_API_KEY=... GITHUB_TOKEN=... cargo run --features github --example github_issues -- owner/repo
 ```
 
 ## Status
 
-Early development. The core abstractions are in place and tested (93 unit tests), but the API will evolve. Notable things not yet implemented:
+Early development. The core abstractions are in place and tested, but the API will evolve. Notable things not yet implemented:
 
 - Streaming responses
 - LLM-based context compaction (summarizing old messages instead of dropping them)

@@ -15,6 +15,7 @@ pub struct RuntimeConfig {
     pub max_tokens: Option<u32>,
     pub temperature: Option<f32>,
     pub context_budget: ContextBudget,
+    pub parallel_tool_execution: bool,
 }
 
 impl Default for RuntimeConfig {
@@ -25,6 +26,7 @@ impl Default for RuntimeConfig {
             max_tokens: None,
             temperature: None,
             context_budget: ContextBudget::default(),
+            parallel_tool_execution: true,
         }
     }
 }
@@ -166,37 +168,49 @@ impl<T: Tokenizer> Runtime<T> {
         messages
     }
 
-    async fn execute_tool_calls(&self, tool_calls: &[ToolCall]) -> Vec<ToolResult> {
-        let mut results = Vec::new();
-
-        for call in tool_calls {
-            let result = if let Some(tool) = self.tools.get(&call.name) {
-                match tool.execute(call.arguments.clone()).await {
-                    Ok(content) => {
-                        let content = self.context_window.truncate_tool_result(&content);
-                        ToolResult {
-                            call_id: call.id.clone(),
-                            content,
-                            is_error: false,
-                        }
-                    }
-                    Err(e) => ToolResult {
+    async fn execute_single_tool_call(&self, call: &ToolCall) -> ToolResult {
+        if let Some(tool) = self.tools.get(&call.name) {
+            match tool.execute(call.arguments.clone()).await {
+                Ok(content) => {
+                    let content = self.context_window.truncate_tool_result(&content);
+                    ToolResult {
                         call_id: call.id.clone(),
-                        content: e.to_string(),
-                        is_error: true,
-                    },
+                        content,
+                        is_error: false,
+                    }
                 }
-            } else {
-                ToolResult {
+                Err(e) => ToolResult {
                     call_id: call.id.clone(),
-                    content: format!("unknown tool: {}", call.name),
+                    content: e.to_string(),
                     is_error: true,
-                }
-            };
+                },
+            }
+        } else {
+            ToolResult {
+                call_id: call.id.clone(),
+                content: format!("unknown tool: {}", call.name),
+                is_error: true,
+            }
+        }
+    }
 
-            results.push(result);
+    async fn execute_tool_calls(&self, tool_calls: &[ToolCall]) -> Vec<ToolResult> {
+        #[cfg(feature = "parallel-tools")]
+        {
+            if self.config.parallel_tool_execution && tool_calls.len() > 1 {
+                let futs: Vec<_> = tool_calls
+                    .iter()
+                    .map(|call| self.execute_single_tool_call(call))
+                    .collect();
+                return futures::future::join_all(futs).await;
+            }
         }
 
+        // Sequential fallback
+        let mut results = Vec::new();
+        for call in tool_calls {
+            results.push(self.execute_single_tool_call(call).await);
+        }
         results
     }
 }
@@ -607,5 +621,212 @@ mod tests {
         let seen = provider.seen_tools.lock().await;
         assert_eq!(seen.len(), 1);
         assert_eq!(seen[0], vec!["read".to_string()]);
+    }
+
+    // --- Parallel tool execution tests ---
+
+    struct SlowTool {
+        name: String,
+        delay_ms: u64,
+    }
+
+    #[async_trait]
+    impl Tool for SlowTool {
+        fn definition(&self) -> ToolDefinition {
+            ToolDefinition {
+                name: self.name.clone(),
+                description: format!("Sleeps for {}ms", self.delay_ms),
+                input_schema: serde_json::json!({"type": "object"}),
+            }
+        }
+
+        async fn execute(&self, _input: serde_json::Value) -> Result<String, ToolError> {
+            tokio::time::sleep(std::time::Duration::from_millis(self.delay_ms)).await;
+            Ok(format!("done:{}", self.name))
+        }
+    }
+
+    #[cfg(feature = "parallel-tools")]
+    struct FailingTool;
+
+    #[cfg(feature = "parallel-tools")]
+    #[async_trait]
+    impl Tool for FailingTool {
+        fn definition(&self) -> ToolDefinition {
+            ToolDefinition {
+                name: "failing".into(),
+                description: "Always fails".into(),
+                input_schema: serde_json::json!({"type": "object"}),
+            }
+        }
+
+        async fn execute(&self, _input: serde_json::Value) -> Result<String, ToolError> {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            Err(ToolError::ExecutionFailed("boom".into()))
+        }
+    }
+
+    #[cfg(feature = "parallel-tools")]
+    #[tokio::test]
+    async fn parallel_execution_faster_than_sequential() {
+        let tool_calls = vec![
+            ToolCall { id: "c1".into(), name: "slow_a".into(), arguments: serde_json::json!({}) },
+            ToolCall { id: "c2".into(), name: "slow_b".into(), arguments: serde_json::json!({}) },
+            ToolCall { id: "c3".into(), name: "slow_c".into(), arguments: serde_json::json!({}) },
+        ];
+
+        let responses = vec![
+            CompletionResponse {
+                message: Message::assistant_with_tool_calls("Running tools.", tool_calls.clone()),
+                usage: Usage { input_tokens: 10, output_tokens: 10 },
+                finish_reason: FinishReason::ToolUse,
+            },
+            CompletionResponse {
+                message: Message::assistant("All done."),
+                usage: Usage { input_tokens: 20, output_tokens: 5 },
+                finish_reason: FinishReason::Stop,
+            },
+        ];
+
+        let mut tools = ToolRegistry::new();
+        tools.register(Box::new(SlowTool { name: "slow_a".into(), delay_ms: 100 }));
+        tools.register(Box::new(SlowTool { name: "slow_b".into(), delay_ms: 100 }));
+        tools.register(Box::new(SlowTool { name: "slow_c".into(), delay_ms: 100 }));
+
+        let config = RuntimeConfig {
+            parallel_tool_execution: true,
+            ..RuntimeConfig::default()
+        };
+
+        let runtime = make_runtime(responses, tools, config);
+        let ns = Namespace::new("test");
+
+        let start = std::time::Instant::now();
+        let result = runtime.run(&ns, Message::user("Go")).await.unwrap();
+        let elapsed = start.elapsed();
+
+        // Parallel: should take ~100ms, not ~300ms
+        assert!(elapsed.as_millis() < 250, "took {}ms, expected <250ms", elapsed.as_millis());
+        assert_eq!(result.turns[0].tool_results.len(), 3);
+        assert_eq!(result.turns[0].tool_results[0].content, "done:slow_a");
+        assert_eq!(result.turns[0].tool_results[1].content, "done:slow_b");
+        assert_eq!(result.turns[0].tool_results[2].content, "done:slow_c");
+    }
+
+    #[tokio::test]
+    async fn sequential_execution_when_disabled() {
+        let tool_calls = vec![
+            ToolCall { id: "c1".into(), name: "slow_a".into(), arguments: serde_json::json!({}) },
+            ToolCall { id: "c2".into(), name: "slow_b".into(), arguments: serde_json::json!({}) },
+        ];
+
+        let responses = vec![
+            CompletionResponse {
+                message: Message::assistant_with_tool_calls("Running tools.", tool_calls.clone()),
+                usage: Usage { input_tokens: 10, output_tokens: 10 },
+                finish_reason: FinishReason::ToolUse,
+            },
+            CompletionResponse {
+                message: Message::assistant("Done."),
+                usage: Usage { input_tokens: 20, output_tokens: 5 },
+                finish_reason: FinishReason::Stop,
+            },
+        ];
+
+        let mut tools = ToolRegistry::new();
+        tools.register(Box::new(SlowTool { name: "slow_a".into(), delay_ms: 50 }));
+        tools.register(Box::new(SlowTool { name: "slow_b".into(), delay_ms: 50 }));
+
+        let config = RuntimeConfig {
+            parallel_tool_execution: false,
+            ..RuntimeConfig::default()
+        };
+
+        let runtime = make_runtime(responses, tools, config);
+        let ns = Namespace::new("test");
+
+        let start = std::time::Instant::now();
+        let result = runtime.run(&ns, Message::user("Go")).await.unwrap();
+        let elapsed = start.elapsed();
+
+        // Sequential: should take >= 100ms (50 + 50)
+        assert!(elapsed.as_millis() >= 90, "took {}ms, expected >=90ms", elapsed.as_millis());
+        assert_eq!(result.turns[0].tool_results.len(), 2);
+    }
+
+    #[cfg(feature = "parallel-tools")]
+    #[tokio::test]
+    async fn parallel_one_error_doesnt_block_others() {
+        let tool_calls = vec![
+            ToolCall { id: "c1".into(), name: "slow_a".into(), arguments: serde_json::json!({}) },
+            ToolCall { id: "c2".into(), name: "failing".into(), arguments: serde_json::json!({}) },
+            ToolCall { id: "c3".into(), name: "slow_b".into(), arguments: serde_json::json!({}) },
+        ];
+
+        let responses = vec![
+            CompletionResponse {
+                message: Message::assistant_with_tool_calls("Running.", tool_calls.clone()),
+                usage: Usage { input_tokens: 10, output_tokens: 10 },
+                finish_reason: FinishReason::ToolUse,
+            },
+            CompletionResponse {
+                message: Message::assistant("Handled."),
+                usage: Usage { input_tokens: 20, output_tokens: 5 },
+                finish_reason: FinishReason::Stop,
+            },
+        ];
+
+        let mut tools = ToolRegistry::new();
+        tools.register(Box::new(SlowTool { name: "slow_a".into(), delay_ms: 50 }));
+        tools.register(Box::new(FailingTool));
+        tools.register(Box::new(SlowTool { name: "slow_b".into(), delay_ms: 50 }));
+
+        let runtime = make_runtime(responses, tools, RuntimeConfig::default());
+        let ns = Namespace::new("test");
+        let result = runtime.run(&ns, Message::user("Go")).await.unwrap();
+
+        let results = &result.turns[0].tool_results;
+        assert_eq!(results.len(), 3);
+        assert!(!results[0].is_error);
+        assert_eq!(results[0].content, "done:slow_a");
+        assert!(results[1].is_error);
+        assert!(results[1].content.contains("boom"));
+        assert!(!results[2].is_error);
+        assert_eq!(results[2].content, "done:slow_b");
+    }
+
+    #[cfg(feature = "parallel-tools")]
+    #[tokio::test]
+    async fn parallel_results_maintain_call_id_ordering() {
+        let tool_calls = vec![
+            ToolCall { id: "first".into(), name: "slow_a".into(), arguments: serde_json::json!({}) },
+            ToolCall { id: "second".into(), name: "slow_b".into(), arguments: serde_json::json!({}) },
+        ];
+
+        let responses = vec![
+            CompletionResponse {
+                message: Message::assistant_with_tool_calls("Go.", tool_calls.clone()),
+                usage: Usage { input_tokens: 10, output_tokens: 10 },
+                finish_reason: FinishReason::ToolUse,
+            },
+            CompletionResponse {
+                message: Message::assistant("Done."),
+                usage: Usage { input_tokens: 20, output_tokens: 5 },
+                finish_reason: FinishReason::Stop,
+            },
+        ];
+
+        let mut tools = ToolRegistry::new();
+        // slow_a takes longer but should still be first in results
+        tools.register(Box::new(SlowTool { name: "slow_a".into(), delay_ms: 80 }));
+        tools.register(Box::new(SlowTool { name: "slow_b".into(), delay_ms: 10 }));
+
+        let runtime = make_runtime(responses, tools, RuntimeConfig::default());
+        let ns = Namespace::new("test");
+        let result = runtime.run(&ns, Message::user("Go")).await.unwrap();
+
+        let results = &result.turns[0].tool_results;
+        assert_eq!(results[0].call_id, "first");
+        assert_eq!(results[1].call_id, "second");
     }
 }

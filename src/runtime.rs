@@ -4,7 +4,10 @@ use crate::context::{ContextBudget, ContextWindow, Tokenizer};
 use crate::message::{Message, ToolCall, ToolResult};
 use crate::namespace::Namespace;
 use crate::policy::PolicyRegistry;
-use crate::provider::{CompletionRequest, CompletionResponse, FinishReason, Provider, ProviderError, Usage};
+use crate::provider::{
+    CompletionRequest, CompletionResponse, FinishReason, Provider, ProviderError,
+    StreamEvent, StreamingProvider, Usage,
+};
 use crate::store::{Session, SessionStore, StoreError};
 use crate::hook::HookRegistry;
 use crate::tool::ToolRegistry;
@@ -32,13 +35,13 @@ impl Default for RuntimeConfig {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TurnResult {
     pub response: CompletionResponse,
     pub tool_results: Vec<ToolResult>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RunResult {
     pub final_message: Message,
     pub turns: Vec<TurnResult>,
@@ -57,8 +60,31 @@ pub enum RuntimeError {
     MaxTurnsExceeded(usize),
 }
 
+/// Events emitted during a streaming run of the agent loop.
+#[derive(Debug)]
+pub enum RuntimeStreamEvent {
+    /// A chunk of text from the assistant.
+    TextDelta(String),
+
+    /// A tool call has started.
+    ToolCallStarted { id: String, name: String },
+
+    /// A tool call has completed execution.
+    ToolCallCompleted { id: String, result: ToolResult },
+
+    /// A full turn (LLM call + tool executions) has completed.
+    TurnCompleted(TurnResult),
+
+    /// The entire run is complete.
+    Done(RunResult),
+
+    /// An error occurred.
+    Error(String),
+}
+
 pub struct Runtime<T: Tokenizer> {
     provider: Arc<dyn Provider>,
+    streaming_provider: Option<Arc<dyn StreamingProvider>>,
     store: Arc<dyn SessionStore>,
     tools: ToolRegistry,
     policies: PolicyRegistry,
@@ -79,6 +105,7 @@ impl<T: Tokenizer> Runtime<T> {
         let context_window = ContextWindow::new(tokenizer, config.context_budget.clone());
         Self {
             provider,
+            streaming_provider: None,
             store,
             tools,
             policies,
@@ -90,6 +117,10 @@ impl<T: Tokenizer> Runtime<T> {
 
     pub fn set_hooks(&mut self, hooks: HookRegistry) {
         self.hooks = hooks;
+    }
+
+    pub fn set_streaming_provider(&mut self, provider: Arc<dyn StreamingProvider>) {
+        self.streaming_provider = Some(provider);
     }
 
     pub async fn run(
@@ -165,6 +196,170 @@ impl<T: Tokenizer> Runtime<T> {
         self.hooks.dispatch_before_session_save(namespace, &mut session).await;
         self.store.save(&session).await?;
         Err(RuntimeError::MaxTurnsExceeded(self.config.max_turns))
+    }
+
+    /// Run the agent loop with streaming, emitting events as they happen.
+    ///
+    /// Requires a streaming provider to be set via `set_streaming_provider`.
+    /// Returns a receiver that yields `RuntimeStreamEvent`s as the agent loop progresses.
+    pub async fn run_streaming(
+        &self,
+        namespace: &Namespace,
+        user_message: Message,
+    ) -> Result<tokio::sync::mpsc::Receiver<RuntimeStreamEvent>, RuntimeError> {
+        let streaming_provider = self
+            .streaming_provider
+            .as_ref()
+            .ok_or_else(|| RuntimeError::Provider(ProviderError::Other(
+                "no streaming provider configured".into(),
+            )))?
+            .clone();
+
+        let mut session = self
+            .store
+            .load(namespace)
+            .await?
+            .unwrap_or_else(|| Session::new(namespace.clone()));
+
+        self.hooks.dispatch_after_session_load(namespace, &session).await;
+        session.push_message(user_message);
+
+        let (tx, rx) = tokio::sync::mpsc::channel(64);
+
+        // We need to collect the state we need and move into the spawned task.
+        // Because the runtime borrows &self, we extract what we need.
+        let store = self.store.clone();
+        let config = self.config.clone();
+        let namespace = namespace.clone();
+        let messages_snapshot = self.build_messages(&session);
+        let all_defs = self.tools.definitions();
+        let policy = self.policies.resolve(&namespace);
+        let tool_defs = policy.filter_definitions(&all_defs);
+
+        let mut request = CompletionRequest {
+            messages: messages_snapshot,
+            tools: tool_defs,
+            max_tokens: config.max_tokens,
+            temperature: config.temperature,
+        };
+
+        self.hooks.dispatch_before_provider_call(&mut request).await;
+
+        // Start streaming from the provider
+        let mut stream_rx = streaming_provider.stream(request).await?;
+
+        // Spawn a task to consume stream events and forward them
+        tokio::spawn(async move {
+            let mut text_content = String::new();
+            let mut tool_calls: Vec<ToolCall> = Vec::new();
+            let mut tool_args_buffers: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+            let mut usage = Usage::default();
+            let mut finish_reason = FinishReason::Stop;
+
+            while let Some(event) = stream_rx.recv().await {
+                match event {
+                    StreamEvent::TextDelta(text) => {
+                        text_content.push_str(&text);
+                        if tx.send(RuntimeStreamEvent::TextDelta(text)).await.is_err() {
+                            return;
+                        }
+                    }
+                    StreamEvent::ToolCallStart { id, name } => {
+                        tool_args_buffers.insert(id.clone(), String::new());
+                        if tx.send(RuntimeStreamEvent::ToolCallStarted {
+                            id: id.clone(),
+                            name: name.clone(),
+                        }).await.is_err() {
+                            return;
+                        }
+                        tool_calls.push(ToolCall {
+                            id,
+                            name,
+                            arguments: serde_json::Value::Null,
+                        });
+                    }
+                    StreamEvent::ToolCallDelta { id, arguments_delta } => {
+                        if let Some(buf) = tool_args_buffers.get_mut(&id) {
+                            buf.push_str(&arguments_delta);
+                        }
+                    }
+                    StreamEvent::Done { usage: u, finish_reason: fr } => {
+                        usage = u;
+                        finish_reason = fr;
+                    }
+                    StreamEvent::Error(msg) => {
+                        let _ = tx.send(RuntimeStreamEvent::Error(msg)).await;
+                        return;
+                    }
+                }
+            }
+
+            // Finalize tool calls with accumulated arguments
+            for tc in &mut tool_calls {
+                if let Some(args_str) = tool_args_buffers.remove(&tc.id) {
+                    tc.arguments = serde_json::from_str(&args_str)
+                        .unwrap_or(serde_json::Value::String(args_str));
+                }
+            }
+
+            // Build the assistant message
+            let message = if tool_calls.is_empty() {
+                Message::assistant(&text_content)
+            } else {
+                Message::assistant_with_tool_calls(&text_content, tool_calls.clone())
+            };
+
+            session.push_message(message.clone());
+
+            let response = CompletionResponse {
+                message,
+                usage: usage.clone(),
+                finish_reason: finish_reason.clone(),
+            };
+
+            let total_usage = usage;
+            let mut turns = Vec::new();
+
+            // If tool calls were made, we can't continue the agent loop in streaming mode
+            // (that would require a non-streaming follow-up). Emit what we have.
+            if finish_reason == FinishReason::ToolUse && !tool_calls.is_empty() {
+                // Note: For a full streaming agent loop, we'd need the tool registry here.
+                // For now, emit the turn result so the caller knows tools need execution.
+                turns.push(TurnResult {
+                    response,
+                    tool_results: vec![],
+                });
+
+                let result = RunResult {
+                    final_message: session.messages.last().cloned().unwrap_or_else(|| Message::assistant("")),
+                    turns,
+                    total_usage,
+                };
+
+                let _ = tx.send(RuntimeStreamEvent::Done(result)).await;
+            } else {
+                turns.push(TurnResult {
+                    response,
+                    tool_results: vec![],
+                });
+
+                let result = RunResult {
+                    final_message: session.messages.last().cloned().unwrap_or_else(|| Message::assistant("")),
+                    turns,
+                    total_usage,
+                };
+
+                // Save session
+                if let Err(e) = store.save(&session).await {
+                    let _ = tx.send(RuntimeStreamEvent::Error(format!("save error: {e}"))).await;
+                    return;
+                }
+
+                let _ = tx.send(RuntimeStreamEvent::Done(result)).await;
+            }
+        });
+
+        Ok(rx)
     }
 
     fn build_messages(&self, session: &Session) -> Vec<Message> {
@@ -1029,5 +1224,88 @@ mod tests {
         let result = runtime.run(&ns, Message::user("Show secret")).await.unwrap();
 
         assert_eq!(result.turns[0].tool_results[0].content, "the [REDACTED] is 42");
+    }
+
+    // --- Streaming tests ---
+
+    #[tokio::test]
+    async fn run_streaming_with_mock_provider() {
+        use crate::provider::StreamEvent;
+
+        struct MockStreamProvider;
+
+        #[async_trait]
+        impl Provider for MockStreamProvider {
+            async fn complete(&self, _request: CompletionRequest) -> Result<CompletionResponse, ProviderError> {
+                Ok(CompletionResponse {
+                    message: Message::assistant("fallback"),
+                    usage: Usage::default(),
+                    finish_reason: FinishReason::Stop,
+                })
+            }
+        }
+
+        #[async_trait]
+        impl StreamingProvider for MockStreamProvider {
+            async fn stream(
+                &self,
+                _request: CompletionRequest,
+            ) -> Result<tokio::sync::mpsc::Receiver<StreamEvent>, ProviderError> {
+                let (tx, rx) = tokio::sync::mpsc::channel(16);
+                tokio::spawn(async move {
+                    let _ = tx.send(StreamEvent::TextDelta("Hello".into())).await;
+                    let _ = tx.send(StreamEvent::TextDelta(" world!".into())).await;
+                    let _ = tx.send(StreamEvent::Done {
+                        usage: Usage { input_tokens: 10, output_tokens: 5 },
+                        finish_reason: FinishReason::Stop,
+                    }).await;
+                });
+                Ok(rx)
+            }
+        }
+
+        let provider = Arc::new(MockStreamProvider);
+        let store = Arc::new(InMemoryStore::new());
+        let mut runtime = Runtime::new(
+            provider.clone(),
+            store,
+            ToolRegistry::new(),
+            PolicyRegistry::default(),
+            CharEstimator::default(),
+            RuntimeConfig::default(),
+        );
+        runtime.set_streaming_provider(provider);
+
+        let ns = Namespace::new("test");
+        let mut rx = runtime.run_streaming(&ns, Message::user("Hi")).await.unwrap();
+
+        let mut texts = Vec::new();
+        let mut got_done = false;
+
+        while let Some(event) = rx.recv().await {
+            match event {
+                RuntimeStreamEvent::TextDelta(t) => texts.push(t),
+                RuntimeStreamEvent::Done(result) => {
+                    assert_eq!(result.final_message.content, "Hello world!");
+                    assert_eq!(result.total_usage.input_tokens, 10);
+                    got_done = true;
+                }
+                _ => {}
+            }
+        }
+
+        assert!(got_done);
+        assert_eq!(texts.join(""), "Hello world!");
+    }
+
+    #[tokio::test]
+    async fn run_streaming_errors_without_provider() {
+        let runtime = make_runtime(vec![], ToolRegistry::new(), RuntimeConfig::default());
+        let ns = Namespace::new("test");
+        let err = runtime.run_streaming(&ns, Message::user("Hi")).await.unwrap_err();
+        match err {
+            RuntimeError::Provider(_) => {}
+            other => panic!("expected Provider error, got {:?}", other),
+        }
     }
 }

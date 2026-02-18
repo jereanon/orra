@@ -49,10 +49,23 @@ claw-lib is built around those problems. It's designed for applications where AI
 - **`runtime`** — The agent loop: load session, build context, call LLM, execute tools, persist
 - **`providers::claude`** — Ready-to-use Claude API implementation (feature-gated)
 - **`tools::github`** — GitHub Issues tools: list, search, get, create, comment, close (feature-gated)
+- **`tools::documents`** — Document retrieval tools with pluggable search backend (feature-gated)
 
 ## Built-in tools
 
 The library ships with optional tool sets you can drop into your application. Each lives behind a feature flag so you only pull in the dependencies you need.
+
+**Document Retrieval** (`documents` feature) — Three tools for searching and reading documents: `search_documents`, `read_document`, `list_documents`. You provide a `DocumentStore` implementation — the library includes `InMemoryDocumentStore` with TF-IDF search for prototyping, and you can swap in a vector database or full-text search engine for production.
+
+```rust
+use std::sync::Arc;
+use claw_lib::tools::documents::{InMemoryDocumentStore, Document, register_tools};
+
+let store = Arc::new(InMemoryDocumentStore::new());
+// Load your documents into the store...
+let mut tools = ToolRegistry::new();
+register_tools(&mut tools, store);
+```
 
 **GitHub Issues** (`github` feature) — Six tools for managing GitHub issues via the REST API. Configure with a token and repo, register into your `ToolRegistry`, done.
 

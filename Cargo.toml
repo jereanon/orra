@@ -29,6 +29,7 @@ tokio-stream = "0.1"
 [features]
 default = []
 claude = ["reqwest", "tokio-stream"]
+openai = ["reqwest", "tokio-stream"]
 discord = ["reqwest", "tokio-tungstenite", "futures-util"]
 documents = []
 github = ["reqwest"]

@@ -6,3 +6,5 @@ pub mod documents;
 
 #[cfg(feature = "github")]
 pub mod github;
+
+pub mod memory;

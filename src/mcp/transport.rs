@@ -33,11 +33,26 @@ pub struct StdioTransport {
 impl StdioTransport {
     /// Spawn a child process and create a transport for communicating with it.
     pub async fn spawn(program: &str, args: &[&str]) -> Result<Self, TransportError> {
-        let mut child = Command::new(program)
-            .args(args)
+        Self::spawn_with_env(program, args, &[]).await
+    }
+
+    /// Spawn a child process with extra environment variables.
+    pub async fn spawn_with_env(
+        program: &str,
+        args: &[&str],
+        env: &[(&str, &str)],
+    ) -> Result<Self, TransportError> {
+        let mut cmd = Command::new(program);
+        cmd.args(args)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+
+        for (key, value) in env {
+            cmd.env(key, value);
+        }
+
+        let mut child = cmd
             .spawn()
             .map_err(|e| TransportError::Io(format!("failed to spawn {}: {}", program, e)))?;
 

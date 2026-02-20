@@ -1,6 +1,9 @@
 #[cfg(feature = "discord")]
 pub mod discord;
 
+#[cfg(feature = "gateway")]
+pub mod gateway;
+
 use std::collections::HashMap;
 
 use async_trait::async_trait;

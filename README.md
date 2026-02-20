@@ -1,6 +1,10 @@
-# agentic
+# agentic-rs
 
-A Rust library for adding AI assistant capabilities to any application. You bring the tools and resources — agentic handles context management, session isolation, and the agent execution loop.
+[![CI](https://github.com/agentic-rs/agentic/actions/workflows/ci.yml/badge.svg)](https://github.com/agentic-rs/agentic/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/agentic-rs.svg)](https://crates.io/crates/agentic-rs)
+[![docs.rs](https://docs.rs/agentic-rs/badge.svg)](https://docs.rs/agentic-rs)
+
+A Rust library for building AI-powered agents. Handles context management, session isolation, tool execution, and the agent loop so you can focus on your domain logic.
 
 ## Why this exists
 
@@ -8,118 +12,33 @@ Most AI/LLM libraries focus on model abstraction or prompt chaining. What they d
 
 agentic is built around those problems. It's designed for applications where AI is a feature, not the whole product — think project management tools, internal dashboards, customer support platforms, developer tooling. Places where you already have domain-specific data and operations, and you want users to interact with them through natural language.
 
-## What it does
-
-**Context namespacing.** Every conversation lives under a hierarchical namespace like `company:engineering:alice` or `tenant:acme:user:bob:channel:support`. Sessions are fully isolated. Namespaces support parent-child relationships, so you can set policies at the tenant level and have them flow down to all users.
-
-**Token-aware context management.** The library tracks token budgets, automatically truncates conversation history when it gets too long (keeping the system prompt and most recent messages), and caps tool result sizes. You plug in a tokenizer — or use the built-in character estimator for quick prototyping.
-
-**Tool policies.** Allow-list or deny-list tools per namespace. Set a policy on `company:viewer` and every namespace under it inherits read-only access. Override it for specific users when needed. Policies resolve by walking up the namespace tree.
-
-**Pluggable everything.** The `Provider` trait is how you connect an LLM. The `Tool` trait is how you expose operations. The `SessionStore` trait is how you persist conversations. Implement what you need, use the defaults for the rest.
-
-## Architecture
-
-```
-                    +-----------+
-                    |  Runtime  |  orchestrates the agent loop
-                    +-----+-----+
-                          |
-          +---------------+---------------+
-          |               |               |
-    +-----+-----+  +-----+-----+  +------+------+
-    |  Provider  |  |   Tools   |  |    Store    |
-    | (LLM API)  |  | (your ops)|  | (sessions)  |
-    +-----+-----+  +-----+-----+  +------+------+
-          |               |               |
-    Claude, OpenAI,   anything you     in-memory,
-    local, etc.       implement        filesystem,
-                                       Redis, etc.
-```
-
-**Modules:**
-
-- **`namespace`** — Hierarchical keys for isolating contexts (`Namespace::new("acme").child("alice")`)
-- **`message`** — Message types with roles, tool calls, and tool results
-- **`tool`** — `Tool` trait and `ToolRegistry` for registering executable tools
-- **`provider`** — `Provider` trait that wraps any LLM API
-- **`context`** — Token budgets, automatic truncation, tool result size limits
-- **`store`** — `SessionStore` trait with a built-in `InMemoryStore`
-- **`policy`** — Per-namespace tool visibility with hierarchical inheritance
-- **`runtime`** — The agent loop: load session, build context, call LLM, execute tools, persist
-- **`providers::claude`** — Ready-to-use Claude API implementation (feature-gated)
-- **`tools::github`** — GitHub Issues tools: list, search, get, create, comment, close (feature-gated)
-- **`tools::discord`** — Discord bot tools: channels, messages, replies, guild info (feature-gated)
-- **`tools::documents`** — Document retrieval tools with pluggable search backend (feature-gated)
-- **`channels`** — `Channel` trait and `ChannelAdapter` for transport-agnostic message routing
-- **`channels::discord`** — Discord Gateway WebSocket channel implementation (feature-gated)
-
-## Built-in tools
-
-The library ships with optional tool sets you can drop into your application. Each lives behind a feature flag so you only pull in the dependencies you need.
-
-**Discord** (`discord` feature) — Six tools for building Discord bots: `list_channels`, `get_channel_info`, `get_messages`, `send_message`, `reply_to_message`, `get_guild_info`. Uses Discord API v10 with bot token auth.
-
-```rust
-use agentic_rs::tools::discord::DiscordConfig;
-
-let dc = DiscordConfig::new("your-bot-token");
-let mut tools = ToolRegistry::new();
-agentic_rs::tools::discord::register_tools(&mut tools, &dc);
-```
-
-**Document Retrieval** (`documents` feature) — Three tools for searching and reading documents: `search_documents`, `read_document`, `list_documents`. You provide a `DocumentStore` implementation — the library includes `InMemoryDocumentStore` with TF-IDF search for prototyping, and you can swap in a vector database or full-text search engine for production.
-
-```rust
-use std::sync::Arc;
-use agentic_rs::tools::documents::{InMemoryDocumentStore, Document, register_tools};
-
-let store = Arc::new(InMemoryDocumentStore::new());
-// Load your documents into the store...
-let mut tools = ToolRegistry::new();
-register_tools(&mut tools, store);
-```
-
-**GitHub Issues** (`github` feature) — Six tools for managing GitHub issues via the REST API. Configure with a token and repo, register into your `ToolRegistry`, done.
-
-```rust
-use agentic_rs::tools::github::GitHubConfig;
-
-let gh = GitHubConfig::new("your-github-token", "owner", "repo");
-let mut tools = ToolRegistry::new();
-agentic_rs::tools::github::register_tools(&mut tools, &gh);
-```
-
 ## Quick start
 
 Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-agentic-rs = { path = "." }  # or from your registry
+agentic-rs = { version = "0.1", features = ["claude"] }
 ```
 
 Basic usage:
 
 ```rust
 use std::sync::Arc;
-use agentic_rs::context::CharEstimator;
-use agentic_rs::message::Message;
-use agentic_rs::namespace::Namespace;
-use agentic_rs::policy::PolicyRegistry;
 use agentic_rs::providers::claude::ClaudeProvider;
 use agentic_rs::runtime::{Runtime, RuntimeConfig};
 use agentic_rs::store::InMemoryStore;
 use agentic_rs::tool::ToolRegistry;
+use agentic_rs::policy::PolicyRegistry;
+use agentic_rs::context::CharEstimator;
 
 let provider = Arc::new(ClaudeProvider::new("your-api-key", "claude-sonnet-4-5-20250929"));
 let store = Arc::new(InMemoryStore::new());
-let tools = ToolRegistry::new(); // register your tools here
 
 let runtime = Runtime::new(
     provider,
     store,
-    tools,
+    ToolRegistry::new(),
     PolicyRegistry::default(),
     CharEstimator::default(),
     RuntimeConfig {
@@ -128,45 +47,135 @@ let runtime = Runtime::new(
     },
 );
 
-let ns = Namespace::new("myapp").child("user-123");
-let result = runtime.run(&ns, Message::user("Hello!")).await?;
-println!("{}", result.final_message.content);
+let result = runtime.send_message("Hello!", "user-123").await?;
+println!("{}", result);
+```
+
+## Feature flags
+
+| Feature | Description |
+|---------|-------------|
+| `claude` | Claude provider (Anthropic API) |
+| `openai` | OpenAI-compatible provider (GPT-4o, local LLMs, etc.) |
+| `discord` | Discord channel and bot tools |
+| `mcp` | Model Context Protocol client |
+| `documents` | Document knowledge store with TF-IDF search |
+| `github` | GitHub issue and PR management tools |
+| `parallel-tools` | Concurrent tool execution |
+| `file-store` | File-based session persistence |
+| `gateway` | HTTP/WebSocket gateway channel |
+
+## Core concepts
+
+**Namespaced sessions.** Every conversation lives under a hierarchical namespace like `tenant:acme:user:bob`. Sessions are fully isolated. Policies flow down from parent namespaces so you can set access control at the org level.
+
+**Token-aware context management.** Tracks token budgets, auto-truncates history when it gets too long (keeping system prompt and recent messages), and caps tool result sizes.
+
+**Pluggable everything.** The `Provider` trait wraps any LLM. The `Tool` trait exposes operations. The `SessionStore` trait handles persistence. Implement what you need, use the defaults for the rest.
+
+## Architecture
+
+```
+                    +-----------+
+                    |  Runtime  |  orchestrates the agent loop
+                    +-----+-----+
+                          |
+          +-------+-------+-------+-------+
+          |       |       |       |       |
+       Provider  Tools   Store  Hooks  Policies
+       (LLM)   (ops)  (persist) (events) (access)
+```
+
+## Modules
+
+**Core:**
+- `runtime` — Agent loop: load session, build context, call LLM, execute tools, persist
+- `provider` — `Provider` and `StreamingProvider` traits for LLM backends
+- `tool` — `Tool` trait and `ToolRegistry`
+- `store` — `SessionStore` trait with `InMemoryStore`
+- `context` — Token budgets and automatic truncation
+- `namespace` — Hierarchical keys for session isolation
+- `message` — Message types with roles, tool calls, tool results
+- `policy` — Per-namespace tool allow/deny lists
+- `hook` — Pre/post message, tool call, and error hooks
+
+**Providers:**
+- `providers::claude` — Anthropic Claude API with streaming
+- `providers::openai` — OpenAI Chat Completions API (works with any compatible endpoint)
+
+**Channels:**
+- `channels::discord` — Discord Gateway WebSocket channel
+- `channels::gateway` — HTTP REST + WebSocket gateway
+
+**Tools:**
+- `tools::discord` — Discord bot tools (channels, messages, guild info)
+- `tools::github` — GitHub issue/PR tools
+- `tools::documents` — Document search and retrieval
+- `tools::browser` — Web page reading with HTML content extraction
+- `tools::image_gen` — Image generation (DALL-E)
+- `tools::delegation` — Sub-agent spawning for complex subtasks
+- `tools::memory` — Remember/recall/forget for long-term context
+
+**Infrastructure:**
+- `mcp` — Model Context Protocol client for external tool servers
+- `memory` — Long-term memory with keyword and semantic search
+- `scheduler` — Cron-based task scheduling
+- `routing` — Message routing across channels and runtimes
+- `metrics` — Counters, gauges, histograms with pluggable sinks
+- `auth` — OAuth2 token management
+- `plugin` — Plugin system with lifecycle management
+- `project` — Multi-project management
+- `voice` — TTS and STT traits
+
+## Using with OpenAI
+
+```rust
+use agentic_rs::providers::openai::OpenAIProvider;
+
+// OpenAI
+let provider = OpenAIProvider::new("your-key", "gpt-4o");
+
+// Local server (Ollama, vLLM, etc.)
+let provider = OpenAIProvider::new("not-needed", "llama3")
+    .with_api_url("http://localhost:11434/v1");
+```
+
+## MCP integration
+
+Connect to external tool servers via the Model Context Protocol:
+
+```rust
+use agentic_rs::mcp::transport::StdioTransport;
+use agentic_rs::mcp::register_mcp_tools;
+
+let transport = Arc::new(
+    StdioTransport::spawn("npx", &["-y", "@modelcontextprotocol/server-filesystem", "/tmp"])
+        .await?
+);
+
+let mut tools = ToolRegistry::new();
+register_mcp_tools(&mut tools, transport).await?;
+// All server tools are now available in the registry
 ```
 
 ## Examples
 
-### [Kanban board assistant](examples/kanban.rs)
+See the [examples/](examples/) directory:
 
-A CLI project management assistant with an in-memory kanban board. Shows multi-user namespacing, tool policies (viewer vs. member roles), and session persistence across user switches.
+- **[kanban](examples/kanban.rs)** — CLI kanban board assistant with multi-user namespacing and role-based tool policies
+- **[discord_bot](examples/discord_bot.rs)** — Live Discord bot using `DiscordChannel` + `ChannelAdapter`
+- **[github_issues](examples/github_issues.rs)** — CLI for managing GitHub issues through natural language
 
 ```bash
+# Kanban board
 ANTHROPIC_API_KEY=... cargo run --features claude --example kanban
-```
 
-### [Discord bot](examples/discord_bot.rs)
-
-A live Discord bot that connects to the Gateway via WebSocket. It listens for @mentions (or all messages with `--all`), processes them through the agent runtime, and replies in the same channel. Uses the `DiscordChannel` + `ChannelAdapter` pattern.
-
-```bash
+# Discord bot
 ANTHROPIC_API_KEY=... DISCORD_TOKEN=... cargo run --features claude,discord --example discord_bot
-# Pass --all to respond to all messages, not just @mentions:
-ANTHROPIC_API_KEY=... DISCORD_TOKEN=... cargo run --features claude,discord --example discord_bot -- --all
-```
 
-### [GitHub issues assistant](examples/github_issues.rs)
-
-A CLI for managing GitHub issues through natural language. Uses the built-in GitHub tools from the library.
-
-```bash
+# GitHub issues
 ANTHROPIC_API_KEY=... GITHUB_TOKEN=... cargo run --features claude,github --example github_issues -- owner/repo
 ```
-
-## Status
-
-Early development. The core abstractions are in place and tested, but the API will evolve. Notable things not yet implemented:
-
-- LLM-based context compaction (summarizing old messages instead of dropping them)
-- OpenAI-compatible provider
 
 ## License
 

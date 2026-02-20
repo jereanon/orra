@@ -1,0 +1,92 @@
+name: Publish to crates.io
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  validate:
+    name: Pre-publish checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Verify version matches tag
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          CARGO_VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          if [ "$TAG_VERSION" != "$CARGO_VERSION" ]; then
+            echo "::error::Tag version ($TAG_VERSION) does not match Cargo.toml version ($CARGO_VERSION)"
+            exit 1
+          fi
+          echo "Version: $CARGO_VERSION"
+
+      - run: cargo check --all-features
+      - run: cargo test --all-features
+      - run: cargo clippy --all-features -- -D warnings
+      - run: cargo doc --all-features --no-deps
+        env:
+          RUSTDOCFLAGS: -Dwarnings
+
+      - name: Dry run publish
+        run: cargo publish --dry-run --all-features
+
+  publish:
+    name: Publish
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: crates-io
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Publish to crates.io
+        run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  release:
+    name: GitHub Release
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          PREV_TAG=$(git tag --sort=-creatordate | head -2 | tail -1)
+          if [ -z "$PREV_TAG" ]; then
+            CHANGES=$(git log --oneline --no-decorate)
+          else
+            CHANGES=$(git log --oneline --no-decorate "${PREV_TAG}..HEAD")
+          fi
+          {
+            echo "changes<<EOF"
+            echo "$CHANGES"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: |
+            ## Changes
+
+            ${{ steps.changelog.outputs.changes }}
+
+            ---
+
+            Install via cargo:
+            ```
+            cargo add agentic-rs
+            ```
+          generate_release_notes: false

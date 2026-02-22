@@ -1,13 +1,13 @@
 [package]
-name = "agentic-rs"
-version = "0.1.0"
+name = "orra"
+version = "0.0.1"
 edition = "2021"
 rust-version = "1.75"
 description = "Context-aware agent session management for any application"
 license = "MIT"
 repository = "https://github.com/jereanon/agentic"
 homepage = "https://github.com/jereanon/agentic"
-documentation = "https://docs.rs/agentic-rs"
+documentation = "https://docs.rs/orra"
 readme = "README.md"
 keywords = ["ai", "agent", "llm", "mcp", "tools"]
 categories = ["api-bindings", "asynchronous"]
@@ -47,6 +47,10 @@ mcp = []
 claude-code = []
 web-fetch = ["reqwest"]
 web-search = ["reqwest"]
+auth = ["reqwest"]
+voice = ["reqwest"]
+browser = ["reqwest"]
+image-gen = ["reqwest"]
 
 [[example]]
 name = "kanban"

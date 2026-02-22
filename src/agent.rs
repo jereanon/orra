@@ -135,7 +135,7 @@ pub fn resolve_agents(
 ///
 /// ```
 /// let agents = vec!["Atlas".to_string(), "CodeBot".to_string()];
-/// let (agent, cleaned) = agentic_rs::agent::detect_agent_mention("@CodeBot help me", &agents);
+/// let (agent, cleaned) = orra::agent::detect_agent_mention("@CodeBot help me", &agents);
 /// assert_eq!(agent, Some("CodeBot"));
 /// assert_eq!(cleaned, " help me");
 /// ```

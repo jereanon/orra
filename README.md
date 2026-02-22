@@ -1,4 +1,4 @@
-# agentic-rs
+# orra
 
 A Rust library for building AI agents. Handles sessions, context management, tool execution, hooks, and the agent loop so you can focus on your domain logic.
 
@@ -12,19 +12,19 @@ agentic is built around those problems. It's designed for applications where AI 
 
 ```toml
 [dependencies]
-agentic-rs = { version = "0.1", features = ["claude"] }
+orra = { version = "0.0.1", features = ["claude"] }
 ```
 
 ```rust
 use std::sync::Arc;
-use agentic_rs::context::CharEstimator;
-use agentic_rs::message::Message;
-use agentic_rs::namespace::Namespace;
-use agentic_rs::policy::PolicyRegistry;
-use agentic_rs::providers::claude::ClaudeProvider;
-use agentic_rs::runtime::{Runtime, RuntimeConfig};
-use agentic_rs::store::InMemoryStore;
-use agentic_rs::tool::ToolRegistry;
+use orra::context::CharEstimator;
+use orra::message::Message;
+use orra::namespace::Namespace;
+use orra::policy::PolicyRegistry;
+use orra::providers::claude::ClaudeProvider;
+use orra::runtime::{Runtime, RuntimeConfig};
+use orra::store::InMemoryStore;
+use orra::tool::ToolRegistry;
 
 let provider = Arc::new(ClaudeProvider::new("your-api-key", "claude-sonnet-4-5-20250929"));
 let store = Arc::new(InMemoryStore::new());
@@ -142,9 +142,9 @@ Register hooks to observe or modify behavior at any lifecycle point:
 
 ```rust
 use std::sync::Arc;
-use agentic_rs::hook::HookRegistry;
-use agentic_rs::hooks::logging::LoggingHook;
-use agentic_rs::hooks::working_directory::WorkingDirectoryHook;
+use orra::hook::HookRegistry;
+use orra::hooks::logging::LoggingHook;
+use orra::hooks::working_directory::WorkingDirectoryHook;
 
 let mut hooks = HookRegistry::new();
 hooks.register(Arc::new(LoggingHook::new()));
@@ -157,7 +157,7 @@ runtime.set_hooks(hooks);
 The approval hook requires a channel to communicate with your UI:
 
 ```rust
-use agentic_rs::hooks::approval::{ApprovalHook, ApprovalRequest};
+use orra::hooks::approval::{ApprovalHook, ApprovalRequest};
 
 let (tx, rx) = tokio::sync::mpsc::channel::<ApprovalRequest>(32);
 hooks.register(Arc::new(ApprovalHook::new(tx)));
@@ -169,7 +169,7 @@ hooks.register(Arc::new(ApprovalHook::new(tx)));
 ## Using with OpenAI
 
 ```rust
-use agentic_rs::providers::openai::OpenAIProvider;
+use orra::providers::openai::OpenAIProvider;
 
 // OpenAI
 let provider = OpenAIProvider::new("your-key", "gpt-4o");
@@ -184,8 +184,8 @@ let provider = OpenAIProvider::new("not-needed", "llama3")
 Connect to external tool servers via the Model Context Protocol:
 
 ```rust
-use agentic_rs::mcp::transport::StdioTransport;
-use agentic_rs::mcp::register_mcp_tools;
+use orra::mcp::transport::StdioTransport;
+use orra::mcp::register_mcp_tools;
 
 let transport = Arc::new(
     StdioTransport::spawn("npx", &["-y", "@modelcontextprotocol/server-filesystem", "/tmp"])

@@ -1,15 +1,15 @@
 use std::io::{self, Write};
 use std::sync::Arc;
 
-use agentic_rs::context::CharEstimator;
-use agentic_rs::message::Message;
-use agentic_rs::namespace::Namespace;
-use agentic_rs::policy::PolicyRegistry;
-use agentic_rs::providers::claude::ClaudeProvider;
-use agentic_rs::runtime::{Runtime, RuntimeConfig};
-use agentic_rs::store::InMemoryStore;
-use agentic_rs::tool::ToolRegistry;
-use agentic_rs::tools::github::GitHubConfig;
+use orra::context::CharEstimator;
+use orra::message::Message;
+use orra::namespace::Namespace;
+use orra::policy::PolicyRegistry;
+use orra::providers::claude::ClaudeProvider;
+use orra::runtime::{Runtime, RuntimeConfig};
+use orra::store::InMemoryStore;
+use orra::tool::ToolRegistry;
+use orra::tools::github::GitHubConfig;
 
 fn system_prompt(owner: &str, repo: &str) -> String {
     format!(
@@ -59,7 +59,7 @@ async fn main() {
     let store = Arc::new(InMemoryStore::new());
 
     let mut tools = ToolRegistry::new();
-    agentic_rs::tools::github::register_tools(&mut tools, &gh);
+    orra::tools::github::register_tools(&mut tools, &gh);
 
     let config = RuntimeConfig {
         system_prompt: Some(system_prompt(&owner, &repo)),

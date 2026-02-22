@@ -56,7 +56,7 @@ impl DiscordConfig {
             .request(method, self.url(path))
             .header("Authorization", format!("Bot {}", self.token))
             .header("Content-Type", "application/json")
-            .header("User-Agent", "agentic-rs")
+            .header("User-Agent", "orra")
     }
 }
 

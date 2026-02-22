@@ -1,4 +1,5 @@
 pub mod agent;
+#[cfg(feature = "auth")]
 pub mod auth;
 pub mod channels;
 pub mod context;
@@ -25,4 +26,5 @@ pub mod store;
 pub mod stores;
 pub mod tool;
 pub mod tools;
+#[cfg(feature = "voice")]
 pub mod voice;

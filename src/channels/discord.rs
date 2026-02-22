@@ -226,8 +226,8 @@ impl DiscordChannel {
                 "intents": intents,
                 "properties": {
                     "os": std::env::consts::OS,
-                    "browser": "agentic-rs",
-                    "device": "agentic-rs"
+                    "browser": "orra",
+                    "device": "orra"
                 }
             }),
         };

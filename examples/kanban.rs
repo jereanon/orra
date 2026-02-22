@@ -5,14 +5,14 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tokio::sync::RwLock;
 
-use agentic_rs::context::CharEstimator;
-use agentic_rs::message::Message;
-use agentic_rs::namespace::Namespace;
-use agentic_rs::policy::{PolicyRegistry, ToolPolicy};
-use agentic_rs::providers::claude::ClaudeProvider;
-use agentic_rs::runtime::{Runtime, RuntimeConfig};
-use agentic_rs::store::{InMemoryStore, SessionStore};
-use agentic_rs::tool::{Tool, ToolDefinition, ToolError, ToolRegistry};
+use orra::context::CharEstimator;
+use orra::message::Message;
+use orra::namespace::Namespace;
+use orra::policy::{PolicyRegistry, ToolPolicy};
+use orra::providers::claude::ClaudeProvider;
+use orra::runtime::{Runtime, RuntimeConfig};
+use orra::store::{InMemoryStore, SessionStore};
+use orra::tool::{Tool, ToolDefinition, ToolError, ToolRegistry};
 
 // ---------------------------------------------------------------------------
 // Kanban board — shared mutable state behind Arc<RwLock<..>>

@@ -44,7 +44,7 @@ impl Provider for PlaceholderProvider {
 /// # Example
 ///
 /// ```rust
-/// use agentic_rs::providers::dynamic::DynamicProvider;
+/// use orra::providers::dynamic::DynamicProvider;
 ///
 /// // Start unconfigured
 /// let provider = DynamicProvider::placeholder();

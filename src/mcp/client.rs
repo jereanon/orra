@@ -63,7 +63,7 @@ impl McpClient {
                 sampling: None,
             },
             client_info: Implementation {
-                name: "agentic-rs".into(),
+                name: "orra".into(),
                 version: env!("CARGO_PKG_VERSION").into(),
             },
         };

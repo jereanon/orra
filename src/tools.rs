@@ -7,6 +7,7 @@ pub mod documents;
 #[cfg(feature = "github")]
 pub mod github;
 
+#[cfg(feature = "browser")]
 pub mod browser;
 
 #[cfg(feature = "claude-code")]
@@ -15,6 +16,7 @@ pub mod claude_code;
 pub mod cron;
 pub mod delegation;
 pub mod exec;
+#[cfg(feature = "image-gen")]
 pub mod image_gen;
 pub mod memory;
 

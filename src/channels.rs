@@ -1,6 +1,7 @@
 #[cfg(feature = "discord")]
 pub mod discord;
 
+#[cfg(feature = "federation")]
 pub mod federation;
 
 #[cfg(feature = "gateway")]

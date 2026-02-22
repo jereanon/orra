@@ -51,6 +51,7 @@ auth = ["reqwest"]
 voice = ["reqwest"]
 browser = ["reqwest"]
 image-gen = ["reqwest"]
+federation = []
 
 [[example]]
 name = "kanban"

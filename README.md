@@ -12,7 +12,7 @@ agentic is built around those problems. It's designed for applications where AI 
 
 ```toml
 [dependencies]
-orra = { version = "0.0.1", features = ["claude"] }
+orra = { version = "0.0.2", features = ["claude"] }
 ```
 
 ```rust

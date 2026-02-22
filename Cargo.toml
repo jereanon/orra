@@ -1,12 +1,12 @@
 [package]
 name = "orra"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2021"
 rust-version = "1.75"
 description = "Context-aware agent session management for any application"
 license = "MIT"
-repository = "https://github.com/jereanon/agentic"
-homepage = "https://github.com/jereanon/agentic"
+repository = "https://github.com/jereanon/orra"
+homepage = "https://github.com/jereanon/orra"
 documentation = "https://docs.rs/orra"
 readme = "README.md"
 keywords = ["ai", "agent", "llm", "mcp", "tools"]

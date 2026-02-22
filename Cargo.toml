@@ -20,7 +20,7 @@ tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
-reqwest = { version = "0.12", features = ["json", "stream"], optional = true }
+reqwest = { version = "0.12", features = ["json", "stream", "multipart"], optional = true }
 futures = { version = "0.3", default-features = false, features = ["alloc"], optional = true }
 futures-util = { version = "0.3", optional = true }
 tokio-stream = { version = "0.1", optional = true }
@@ -44,6 +44,9 @@ parallel-tools = ["futures"]
 file-store = []
 gateway = []
 mcp = []
+claude-code = []
+web-fetch = ["reqwest"]
+web-search = ["reqwest"]
 
 [[example]]
 name = "kanban"

@@ -88,6 +88,7 @@ impl SubAgentRunner {
                 tools: tool_defs.clone(),
                 max_tokens: self.config.max_tokens,
                 temperature: self.config.temperature,
+                model: None,
             };
 
             let response = self
@@ -242,6 +243,112 @@ impl Tool for SpawnAgentTool {
             result.turns_used,
             result.usage.total_tokens(),
             result.content,
+        ))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// DelegateToAgent tool — route a task to a named agent's runtime
+// ---------------------------------------------------------------------------
+
+/// Tool that lets an agent delegate a task to another named agent.
+/// Unlike `SpawnAgentTool`, this uses an existing agent's full runtime
+/// (with its own system prompt, model, and tools) rather than creating
+/// an ephemeral sub-agent.
+pub struct DelegateToAgentTool {
+    /// Map of lowercase agent names to their runtimes.
+    runtimes: Arc<tokio::sync::RwLock<std::collections::HashMap<String, Arc<crate::runtime::Runtime<crate::context::CharEstimator>>>>>,
+    /// Name of the agent that owns this tool (to prevent self-delegation).
+    self_name: String,
+}
+
+impl DelegateToAgentTool {
+    pub fn new(
+        runtimes: Arc<tokio::sync::RwLock<std::collections::HashMap<String, Arc<crate::runtime::Runtime<crate::context::CharEstimator>>>>>,
+        self_name: String,
+    ) -> Self {
+        Self { runtimes, self_name }
+    }
+}
+
+#[async_trait]
+impl Tool for DelegateToAgentTool {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: "delegate_to_agent".into(),
+            description: "Delegate a task to another named agent. The target agent \
+                          has its own personality, system prompt, and capabilities. \
+                          Use this when another agent is better suited for a task."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "agent": {
+                        "type": "string",
+                        "description": "Name of the target agent (case-insensitive)"
+                    },
+                    "task": {
+                        "type": "string",
+                        "description": "The task or question to delegate to the agent"
+                    }
+                },
+                "required": ["agent", "task"]
+            }),
+        }
+    }
+
+    async fn execute(&self, input: serde_json::Value) -> Result<String, ToolError> {
+        let agent_name = input
+            .get("agent")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ToolError::InvalidInput("missing 'agent'".into()))?;
+
+        let task = input
+            .get("task")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ToolError::InvalidInput("missing 'task'".into()))?;
+
+        let key = agent_name.to_lowercase();
+
+        // Prevent self-delegation loops
+        if key == self.self_name.to_lowercase() {
+            return Err(ToolError::ExecutionFailed(
+                "cannot delegate to yourself".into(),
+            ));
+        }
+
+        let runtimes = self.runtimes.read().await;
+        let runtime = runtimes
+            .get(&key)
+            .ok_or_else(|| {
+                let available: Vec<&str> = runtimes.keys().map(|k| k.as_str()).collect();
+                ToolError::ExecutionFailed(format!(
+                    "agent '{}' not found. Available agents: {}",
+                    agent_name,
+                    available.join(", ")
+                ))
+            })?
+            .clone();
+        drop(runtimes);
+
+        // Create a temporary namespace for this delegation
+        let ns = crate::namespace::Namespace::parse(&format!(
+            "delegation:{}:{}",
+            self.self_name.to_lowercase(),
+            uuid::Uuid::new_v4()
+        ));
+
+        let result = runtime
+            .run(&ns, crate::message::Message::user(task))
+            .await
+            .map_err(|e| ToolError::ExecutionFailed(format!("agent '{}' failed: {}", agent_name, e)))?;
+
+        Ok(format!(
+            "[Agent '{}' responded ({} turns, {} tokens)]\n\n{}",
+            agent_name,
+            result.turns.len(),
+            result.total_usage.total_tokens(),
+            result.final_message.content,
         ))
     }
 }

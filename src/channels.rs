@@ -1,8 +1,12 @@
 #[cfg(feature = "discord")]
 pub mod discord;
 
+pub mod federation;
+
 #[cfg(feature = "gateway")]
 pub mod gateway;
+
+pub mod manager;
 
 use std::collections::HashMap;
 
@@ -71,6 +75,27 @@ pub trait Channel: Send + Sync {
 
     /// Send an error response back through the channel.
     async fn send_error(&self, error: OutboundError) -> Result<(), ChannelError>;
+
+    /// Start a typing/processing indicator for the given message.
+    ///
+    /// Returns a guard that, when dropped, stops the indicator. Channels that
+    /// don't support typing indicators can use the default no-op implementation.
+    async fn start_typing(&self, _metadata: &HashMap<String, serde_json::Value>) -> Option<TypingGuard> {
+        None
+    }
+}
+
+/// A guard that keeps a typing indicator alive. When dropped, the background
+/// refresh task is cancelled automatically.
+pub struct TypingGuard {
+    _cancel_tx: tokio::sync::oneshot::Sender<()>,
+}
+
+impl TypingGuard {
+    /// Create a new typing guard that will cancel when dropped.
+    pub fn new(cancel_tx: tokio::sync::oneshot::Sender<()>) -> Self {
+        Self { _cancel_tx: cancel_tx }
+    }
 }
 
 /// Adapter that connects a `Channel` to a `Runtime`, running a receive-process-respond loop.
@@ -87,6 +112,9 @@ impl ChannelAdapter {
         while let Some(inbound) = channel.receive().await {
             let namespace = inbound.namespace.clone();
             let metadata = inbound.metadata.clone();
+
+            // Show typing indicator while processing
+            let _typing = channel.start_typing(&metadata).await;
 
             match runtime.run(&namespace, inbound.message).await {
                 Ok(run_result) => {

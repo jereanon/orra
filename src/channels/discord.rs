@@ -11,6 +11,7 @@ use crate::channels::{Channel, ChannelError, InboundMessage, OutboundError, Outb
 use crate::message::Message;
 use crate::namespace::Namespace;
 use crate::tools::discord::DiscordConfig;
+use tokio::sync::watch;
 
 // ---------------------------------------------------------------------------
 // Discord Gateway types
@@ -73,6 +74,7 @@ const OP_HEARTBEAT_ACK: u8 = 11;
 // Intents
 const INTENT_GUILDS: u64 = 1 << 0;
 const INTENT_GUILD_MESSAGES: u64 = 1 << 9;
+const INTENT_DIRECT_MESSAGES: u64 = 1 << 12;
 const INTENT_MESSAGE_CONTENT: u64 = 1 << 15;
 
 // ---------------------------------------------------------------------------
@@ -86,6 +88,8 @@ pub enum MessageFilter {
     MentionsOnly,
     /// All messages (excluding the bot's own).
     All,
+    /// Only direct messages from the specified usernames.
+    DirectMessagesFrom(Vec<String>),
 }
 
 /// Configuration for a Discord Gateway channel.
@@ -98,6 +102,10 @@ pub struct DiscordChannelConfig {
     pub namespace_prefix: String,
     /// Which messages to forward.
     pub filter: MessageFilter,
+    /// Known agent names for @mention routing. When a message contains
+    /// `@AgentName` (case-insensitive), the matched agent name is stored
+    /// in metadata under the key `"agent"`.
+    pub agent_names: Vec<String>,
 }
 
 impl DiscordChannelConfig {
@@ -106,6 +114,7 @@ impl DiscordChannelConfig {
             discord,
             namespace_prefix: "discord".into(),
             filter: MessageFilter::MentionsOnly,
+            agent_names: Vec::new(),
         }
     }
 
@@ -116,6 +125,11 @@ impl DiscordChannelConfig {
 
     pub fn with_namespace_prefix(mut self, prefix: impl Into<String>) -> Self {
         self.namespace_prefix = prefix.into();
+        self
+    }
+
+    pub fn with_agent_names(mut self, names: Vec<String>) -> Self {
+        self.agent_names = names;
         self
     }
 }
@@ -135,17 +149,29 @@ pub struct DiscordChannel {
     inbound_rx: Mutex<mpsc::Receiver<InboundMessage>>,
     inbound_tx: mpsc::Sender<InboundMessage>,
     bot_id: Mutex<Option<String>>,
+    /// Shutdown signal — send `true` to stop the background tasks.
+    shutdown_tx: watch::Sender<bool>,
 }
 
 impl DiscordChannel {
     pub fn new(config: DiscordChannelConfig) -> Self {
         let (inbound_tx, inbound_rx) = mpsc::channel(256);
+        let (shutdown_tx, _) = watch::channel(false);
         Self {
             config,
             inbound_rx: Mutex::new(inbound_rx),
             inbound_tx,
             bot_id: Mutex::new(None),
+            shutdown_tx,
         }
+    }
+
+    /// Shut down the Discord connection gracefully.
+    ///
+    /// Signals all background tasks (heartbeat, event reader) to stop.
+    /// The `receive()` method checks this signal and will return `None`.
+    pub fn shutdown(&self) {
+        let _ = self.shutdown_tx.send(true);
     }
 
     /// Connect to the Discord Gateway and start receiving events.
@@ -189,7 +215,10 @@ impl DiscordChannel {
             .ok_or_else(|| DiscordChannelError::Protocol("missing heartbeat_interval".into()))?;
 
         // Send Identify
-        let intents = INTENT_GUILDS | INTENT_GUILD_MESSAGES | INTENT_MESSAGE_CONTENT;
+        let mut intents = INTENT_GUILDS | INTENT_GUILD_MESSAGES | INTENT_MESSAGE_CONTENT;
+        if matches!(self.config.filter, MessageFilter::DirectMessagesFrom(_)) {
+            intents |= INTENT_DIRECT_MESSAGES;
+        }
         let identify = GatewayPayload {
             op: OP_IDENTIFY,
             d: serde_json::json!({
@@ -237,24 +266,31 @@ impl DiscordChannel {
         let heartbeat_write = write.clone();
         let sequence = Arc::new(Mutex::new(ready_event.s));
         let seq_for_heartbeat = sequence.clone();
+        let mut shutdown_rx_heartbeat = self.shutdown_tx.subscribe();
 
         tokio::spawn(async move {
             let mut interval =
                 tokio::time::interval(tokio::time::Duration::from_millis(heartbeat_interval));
             loop {
-                interval.tick().await;
-                let seq = *seq_for_heartbeat.lock().await;
-                let payload = GatewayPayload {
-                    op: OP_HEARTBEAT,
-                    d: match seq {
-                        Some(s) => serde_json::json!(s),
-                        None => serde_json::Value::Null,
-                    },
-                };
-                let msg = serde_json::to_string(&payload).unwrap();
-                let mut w = heartbeat_write.lock().await;
-                if w.send(tungstenite::Message::Text(msg.into())).await.is_err() {
-                    break;
+                tokio::select! {
+                    _ = interval.tick() => {
+                        let seq = *seq_for_heartbeat.lock().await;
+                        let payload = GatewayPayload {
+                            op: OP_HEARTBEAT,
+                            d: match seq {
+                                Some(s) => serde_json::json!(s),
+                                None => serde_json::Value::Null,
+                            },
+                        };
+                        let msg = serde_json::to_string(&payload).unwrap();
+                        let mut w = heartbeat_write.lock().await;
+                        if w.send(tungstenite::Message::Text(msg.into())).await.is_err() {
+                            break;
+                        }
+                    }
+                    _ = shutdown_rx_heartbeat.changed() => {
+                        break;
+                    }
                 }
             }
         });
@@ -263,9 +299,23 @@ impl DiscordChannel {
         let inbound_tx = self.inbound_tx.clone();
         let filter = self.config.filter.clone();
         let ns_prefix = self.config.namespace_prefix.clone();
+        let agent_names = self.config.agent_names.clone();
+        let mut shutdown_rx_reader = self.shutdown_tx.subscribe();
 
         tokio::spawn(async move {
-            while let Some(msg_result) = read.next().await {
+            loop {
+                let msg_result = tokio::select! {
+                    result = read.next() => {
+                        match result {
+                            Some(r) => r,
+                            None => break,
+                        }
+                    }
+                    _ = shutdown_rx_reader.changed() => {
+                        eprintln!("[discord] Shutdown signal received, disconnecting...");
+                        break;
+                    }
+                };
                 let msg = match msg_result {
                     Ok(m) => m,
                     Err(_) => break,
@@ -305,6 +355,11 @@ impl DiscordChannel {
                                 MessageFilter::MentionsOnly => {
                                     mc.mentions.iter().any(|m| m.id == bot_user_id)
                                 }
+                                MessageFilter::DirectMessagesFrom(users) => {
+                                    // Must be a DM (no guild_id) from an allowed user
+                                    mc.guild_id.is_none()
+                                        && users.iter().any(|u| u.eq_ignore_ascii_case(&mc.author.username))
+                                }
                             };
 
                             if !should_process {
@@ -313,6 +368,10 @@ impl DiscordChannel {
 
                             // Strip the bot mention from content for cleaner input
                             let content = strip_mention(&mc.content, &bot_user_id);
+
+                            // Detect @AgentName mentions for multi-agent routing
+                            let (agent, content) = detect_agent_mention(&content, &agent_names);
+
                             if content.trim().is_empty() {
                                 continue;
                             }
@@ -344,6 +403,9 @@ impl DiscordChannel {
                             if let Some(ref gid) = mc.guild_id {
                                 metadata.insert("guild_id".into(), serde_json::json!(gid));
                             }
+                            if let Some(agent_name) = agent {
+                                metadata.insert("agent".into(), serde_json::json!(agent_name));
+                            }
 
                             let inbound = InboundMessage {
                                 namespace: ns,
@@ -372,7 +434,64 @@ impl DiscordChannel {
 #[async_trait]
 impl Channel for DiscordChannel {
     async fn receive(&self) -> Option<InboundMessage> {
-        self.inbound_rx.lock().await.recv().await
+        let mut shutdown_rx = self.shutdown_tx.subscribe();
+        let mut rx = self.inbound_rx.lock().await;
+        tokio::select! {
+            msg = rx.recv() => msg,
+            _ = shutdown_rx.changed() => None,
+        }
+    }
+
+    async fn start_typing(
+        &self,
+        metadata: &HashMap<String, serde_json::Value>,
+    ) -> Option<crate::channels::TypingGuard> {
+        let channel_id = metadata
+            .get("channel_id")
+            .and_then(|v| v.as_str())?
+            .to_string();
+
+        let discord = self.config.discord.clone();
+
+        // Send the initial typing indicator
+        let _ = discord
+            .request(
+                reqwest::Method::POST,
+                &format!("channels/{}/typing", channel_id),
+            )
+            .send()
+            .await;
+
+        // Spawn a background task that re-triggers every 8 seconds.
+        // The oneshot channel acts as a cancellation signal — when the
+        // TypingGuard is dropped the sender is dropped, causing the
+        // receiver to resolve and the loop to exit.
+        let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel::<()>();
+
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(8));
+            // Skip the first tick (we already sent the initial one)
+            interval.tick().await;
+
+            loop {
+                tokio::select! {
+                    _ = interval.tick() => {
+                        let _ = discord
+                            .request(
+                                reqwest::Method::POST,
+                                &format!("channels/{}/typing", channel_id),
+                            )
+                            .send()
+                            .await;
+                    }
+                    _ = &mut cancel_rx => {
+                        break;
+                    }
+                }
+            }
+        });
+
+        Some(crate::channels::TypingGuard::new(cancel_tx))
     }
 
     async fn send(&self, response: OutboundMessage) -> Result<(), ChannelError> {
@@ -460,6 +579,9 @@ fn strip_mention(content: &str, bot_id: &str) -> String {
         .replace(&format!("<@{}>", bot_id), "")
         .replace(&format!("<@!{}>", bot_id), "")
 }
+
+// Re-export detect_agent_mention from the agent module for backward compat
+use crate::agent::detect_agent_mention;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DiscordChannelError {
@@ -606,5 +728,54 @@ mod tests {
         let config = DiscordChannelConfig::new(dc);
         let _channel = DiscordChannel::new(config);
         // Just verify construction doesn't panic
+    }
+
+    #[test]
+    fn detect_agent_mention_finds_match() {
+        let agents = vec!["Atlas".into(), "CodeBot".into()];
+        let (agent, content) = detect_agent_mention("@Atlas what is 2+2?", &agents);
+        assert_eq!(agent, Some("Atlas"));
+        assert_eq!(content, " what is 2+2?");
+    }
+
+    #[test]
+    fn detect_agent_mention_case_insensitive() {
+        let agents = vec!["Atlas".into(), "CodeBot".into()];
+        let (agent, content) = detect_agent_mention("@codebot help me", &agents);
+        assert_eq!(agent, Some("CodeBot"));
+        assert_eq!(content, " help me");
+    }
+
+    #[test]
+    fn detect_agent_mention_no_match() {
+        let agents = vec!["Atlas".into(), "CodeBot".into()];
+        let (agent, content) = detect_agent_mention("hello world", &agents);
+        assert!(agent.is_none());
+        assert_eq!(content, "hello world");
+    }
+
+    #[test]
+    fn detect_agent_mention_empty_agents() {
+        let agents: Vec<String> = Vec::new();
+        let (agent, content) = detect_agent_mention("@Atlas hello", &agents);
+        assert!(agent.is_none());
+        assert_eq!(content, "@Atlas hello");
+    }
+
+    #[test]
+    fn detect_agent_mention_word_boundary() {
+        let agents = vec!["At".into()];
+        // "@Atlas" should NOT match agent "At" because "las" follows
+        let (agent, content) = detect_agent_mention("@Atlas hello", &agents);
+        assert!(agent.is_none());
+        assert_eq!(content, "@Atlas hello");
+    }
+
+    #[test]
+    fn config_with_agent_names() {
+        let dc = DiscordConfig::new("tok");
+        let config = DiscordChannelConfig::new(dc)
+            .with_agent_names(vec!["Atlas".into(), "CodeBot".into()]);
+        assert_eq!(config.agent_names.len(), 2);
     }
 }

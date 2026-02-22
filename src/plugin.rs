@@ -257,12 +257,7 @@ pub enum PluginError {
     Other(String),
 }
 
-impl std::fmt::Display for PluginError {
-    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // thiserror handles this
-        Ok(())
-    }
-}
+// Display is derived by thiserror::Error above.
 
 // ---------------------------------------------------------------------------
 // Tests

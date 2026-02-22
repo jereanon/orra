@@ -45,6 +45,7 @@ jobs:
           - "parallel-tools"
           - "file-store"
           - "gateway"
+          - "claude-code"
           - "claude,openai,discord"
     steps:
       - uses: actions/checkout@v4

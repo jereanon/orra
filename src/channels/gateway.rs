@@ -92,7 +92,7 @@ pub struct ChatResponse {
 }
 
 /// Token usage info included in API responses.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ChatUsage {
     pub input_tokens: u32,
     pub output_tokens: u32,
@@ -119,6 +119,10 @@ pub enum WsMessage {
     Chat {
         message: String,
         namespace: Option<String>,
+        /// Optional model override for this message.
+        model: Option<String>,
+        /// Optional agent name to route this message to.
+        agent: Option<String>,
     },
 
     /// Server sends a text chunk (streaming).
@@ -131,11 +135,29 @@ pub enum WsMessage {
         message: String,
         namespace: String,
         usage: ChatUsage,
+        /// Name of the agent that generated this response.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        agent: Option<String>,
     },
 
     /// Server sends an error.
     #[serde(rename = "error")]
     Error { error: String },
+
+    /// Server asks client to approve a tool call before execution.
+    #[serde(rename = "tool_approval_request")]
+    ToolApprovalRequest {
+        call_id: String,
+        tool_name: String,
+        arguments: serde_json::Value,
+    },
+
+    /// Client responds with approval or denial for a tool call.
+    #[serde(rename = "tool_approval_response")]
+    ToolApprovalResponse {
+        call_id: String,
+        approved: bool,
+    },
 
     /// Ping/pong for keepalive.
     #[serde(rename = "ping")]
@@ -364,6 +386,8 @@ mod tests {
         let msg = WsMessage::Chat {
             message: "Hello".into(),
             namespace: Some("test".into()),
+            model: None,
+            agent: None,
         };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains("\"type\":\"chat\""));
@@ -447,6 +471,7 @@ mod tests {
                 output_tokens: 3,
                 total_tokens: 8,
             },
+            agent: Some("Atlas".into()),
         };
 
         let json = serde_json::to_string(&msg).unwrap();

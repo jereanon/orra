@@ -9,6 +9,9 @@ pub struct CompletionRequest {
     pub tools: Vec<ToolDefinition>,
     pub max_tokens: Option<u32>,
     pub temperature: Option<f32>,
+    /// Optional per-request model override. If set, the provider should use
+    /// this model instead of its default.
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -153,6 +156,7 @@ mod tests {
             tools: vec![],
             max_tokens: None,
             temperature: None,
+            model: None,
         };
 
         let response = provider.complete(request).await.unwrap();
@@ -180,6 +184,7 @@ mod tests {
             tools: vec![],
             max_tokens: None,
             temperature: None,
+            model: None,
         };
 
         let err = provider.complete(request).await.unwrap_err();

@@ -128,6 +128,16 @@ impl<T: Tokenizer> Runtime<T> {
         namespace: &Namespace,
         user_message: Message,
     ) -> Result<RunResult, RuntimeError> {
+        self.run_with_model(namespace, user_message, None).await
+    }
+
+    /// Run the agent loop with an optional model override.
+    pub async fn run_with_model(
+        &self,
+        namespace: &Namespace,
+        user_message: Message,
+        model: Option<String>,
+    ) -> Result<RunResult, RuntimeError> {
         let mut session = self
             .store
             .load(namespace)
@@ -152,6 +162,7 @@ impl<T: Tokenizer> Runtime<T> {
                 tools: tool_defs,
                 max_tokens: self.config.max_tokens,
                 temperature: self.config.temperature,
+                model: model.clone(),
             };
 
             self.hooks.dispatch_before_provider_call(&mut request).await;
@@ -207,6 +218,16 @@ impl<T: Tokenizer> Runtime<T> {
         namespace: &Namespace,
         user_message: Message,
     ) -> Result<tokio::sync::mpsc::Receiver<RuntimeStreamEvent>, RuntimeError> {
+        self.run_streaming_with_model(namespace, user_message, None).await
+    }
+
+    /// Run the agent loop with streaming and an optional model override.
+    pub async fn run_streaming_with_model(
+        &self,
+        namespace: &Namespace,
+        user_message: Message,
+        model: Option<String>,
+    ) -> Result<tokio::sync::mpsc::Receiver<RuntimeStreamEvent>, RuntimeError> {
         let streaming_provider = self
             .streaming_provider
             .as_ref()
@@ -241,6 +262,7 @@ impl<T: Tokenizer> Runtime<T> {
             tools: tool_defs,
             max_tokens: config.max_tokens,
             temperature: config.temperature,
+            model,
         };
 
         self.hooks.dispatch_before_provider_call(&mut request).await;
@@ -381,7 +403,16 @@ impl<T: Tokenizer> Runtime<T> {
 
     async fn execute_single_tool_call(&self, call: &ToolCall) -> ToolResult {
         let mut call = call.clone();
-        self.hooks.dispatch_before_tool_call(&mut call).await;
+
+        // If any hook rejects the tool call, skip execution and return the
+        // rejection reason as an error result.
+        if let Err(reason) = self.hooks.dispatch_before_tool_call(&mut call).await {
+            return ToolResult {
+                call_id: call.id.clone(),
+                content: reason,
+                is_error: true,
+            };
+        }
 
         let mut result = if let Some(tool) = self.tools.get(&call.name) {
             match tool.execute(call.arguments.clone()).await {

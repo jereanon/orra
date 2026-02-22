@@ -47,11 +47,11 @@ impl DiscordConfig {
         &self.api_base
     }
 
-    pub(crate) fn url(&self, path: &str) -> String {
+    pub fn url(&self, path: &str) -> String {
         format!("{}/{}", self.api_base, path)
     }
 
-    pub(crate) fn request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
+    pub fn request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
         self.client
             .request(method, self.url(path))
             .header("Authorization", format!("Bot {}", self.token))

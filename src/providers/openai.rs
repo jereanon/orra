@@ -116,7 +116,7 @@ impl OpenAIProvider {
         };
 
         ChatRequest {
-            model: self.model.clone(),
+            model: request.model.clone().unwrap_or_else(|| self.model.clone()),
             messages,
             tools,
             max_tokens: Some(request.max_tokens.unwrap_or(DEFAULT_MAX_TOKENS)),
@@ -517,6 +517,7 @@ mod tests {
             tools: vec![],
             max_tokens: Some(1024),
             temperature: Some(0.5),
+            model: None,
         };
 
         let api_req = provider.build_api_request(&request);
@@ -546,6 +547,7 @@ mod tests {
             }],
             max_tokens: None,
             temperature: None,
+            model: None,
         };
 
         let api_req = provider.build_api_request(&request);
@@ -581,6 +583,7 @@ mod tests {
             tools: vec![],
             max_tokens: None,
             temperature: None,
+            model: None,
         };
 
         let api_req = provider.build_api_request(&request);

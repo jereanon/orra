@@ -148,6 +148,13 @@ impl Router {
                 .find(|c| c.name == source)
                 .map(|c| c.channel.clone());
 
+            // Show typing indicator while processing
+            let _typing = if let Some(ref ch) = source_channel {
+                ch.start_typing(&metadata).await
+            } else {
+                None
+            };
+
             match runtime.run(&namespace, inbound.message).await {
                 Ok(run_result) => {
                     if let Some(ch) = source_channel {

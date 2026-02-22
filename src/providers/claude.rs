@@ -40,6 +40,20 @@ impl ClaudeProvider {
         self
     }
 
+    /// Apply the correct auth header based on the key format.
+    /// OAuth tokens (`sk-ant-oat*`) use `Authorization: Bearer` plus the
+    /// `anthropic-beta: oauth-2025-04-20` header required by Anthropic's API.
+    /// Regular API keys use the `x-api-key` header.
+    fn apply_auth(&self, builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        if self.api_key.starts_with("sk-ant-oat") {
+            builder
+                .header("Authorization", format!("Bearer {}", self.api_key))
+                .header("anthropic-beta", "oauth-2025-04-20")
+        } else {
+            builder.header("x-api-key", &self.api_key)
+        }
+    }
+
     fn build_api_request(&self, request: &CompletionRequest) -> ApiRequest {
         let mut system = None;
         let mut messages = Vec::new();
@@ -115,7 +129,7 @@ impl ClaudeProvider {
         };
 
         ApiRequest {
-            model: self.model.clone(),
+            model: request.model.clone().unwrap_or_else(|| self.model.clone()),
             max_tokens: request.max_tokens.unwrap_or(DEFAULT_MAX_TOKENS),
             system,
             messages,
@@ -200,12 +214,12 @@ impl Provider for ClaudeProvider {
     ) -> Result<CompletionResponse, ProviderError> {
         let api_request = self.build_api_request(&request);
 
-        let http_response = self
+        let builder = self
             .client
             .post(&self.api_url)
-            .header("x-api-key", &self.api_key)
             .header("anthropic-version", ANTHROPIC_VERSION)
-            .header("content-type", "application/json")
+            .header("content-type", "application/json");
+        let http_response = self.apply_auth(builder)
             .json(&api_request)
             .send()
             .await
@@ -361,12 +375,12 @@ impl StreamingProvider for ClaudeProvider {
         let mut api_request = self.build_api_request(&request);
         api_request.stream = Some(true);
 
-        let http_response = self
+        let builder = self
             .client
             .post(&self.api_url)
-            .header("x-api-key", &self.api_key)
             .header("anthropic-version", ANTHROPIC_VERSION)
-            .header("content-type", "application/json")
+            .header("content-type", "application/json");
+        let http_response = self.apply_auth(builder)
             .json(&api_request)
             .send()
             .await
@@ -543,6 +557,7 @@ mod tests {
             tools: vec![],
             max_tokens: Some(1024),
             temperature: Some(0.7),
+            model: None,
         };
 
         let api_req = p.build_api_request(&request);
@@ -566,6 +581,7 @@ mod tests {
             tools: vec![],
             max_tokens: None,
             temperature: None,
+            model: None,
         };
 
         let api_req = p.build_api_request(&request);
@@ -583,6 +599,7 @@ mod tests {
             tools: vec![],
             max_tokens: None,
             temperature: None,
+            model: None,
         };
 
         let api_req = p.build_api_request(&request);
@@ -607,6 +624,7 @@ mod tests {
             }],
             max_tokens: None,
             temperature: None,
+            model: None,
         };
 
         let api_req = p.build_api_request(&request);
@@ -640,6 +658,7 @@ mod tests {
             tools: vec![],
             max_tokens: None,
             temperature: None,
+            model: None,
         };
 
         let api_req = p.build_api_request(&request);
@@ -673,6 +692,7 @@ mod tests {
             tools: vec![],
             max_tokens: None,
             temperature: None,
+            model: None,
         };
 
         let api_req = p.build_api_request(&request);
@@ -851,6 +871,7 @@ mod tests {
             }],
             max_tokens: Some(512),
             temperature: Some(0.5),
+            model: None,
         };
 
         let api_req = p.build_api_request(&request);
@@ -911,6 +932,7 @@ mod tests {
             tools: vec![],
             max_tokens: Some(1024),
             temperature: None,
+            model: None,
         };
 
         let response = provider.complete(request).await.unwrap();
@@ -965,6 +987,7 @@ mod tests {
             }],
             max_tokens: None,
             temperature: None,
+            model: None,
         };
 
         let response = provider.complete(request).await.unwrap();
@@ -1008,6 +1031,7 @@ mod tests {
             tools: vec![],
             max_tokens: None,
             temperature: None,
+            model: None,
         };
 
         let err = provider.complete(request).await.unwrap_err();
@@ -1043,6 +1067,7 @@ mod tests {
             tools: vec![],
             max_tokens: None,
             temperature: None,
+            model: None,
         };
 
         let err = provider.complete(request).await.unwrap_err();
@@ -1234,6 +1259,7 @@ data: {\"type\":\"message_stop\"}\n\
             tools: vec![],
             max_tokens: Some(1024),
             temperature: None,
+            model: None,
         };
 
         let mut rx = provider.stream(request).await.unwrap();
@@ -1290,6 +1316,7 @@ data: {\"type\":\"message_stop\"}\n\
             }],
             max_tokens: Some(1024),
             temperature: None,
+            model: None,
         };
 
         let api_req = p.build_api_request(&request);

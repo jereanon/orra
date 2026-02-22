@@ -1,7 +1,10 @@
+pub mod agent;
 pub mod auth;
 pub mod channels;
 pub mod context;
+pub mod cron;
 pub mod hook;
+pub mod hooks;
 #[cfg(feature = "mcp")]
 pub mod mcp;
 pub mod memory;
@@ -11,10 +14,12 @@ pub mod namespace;
 pub mod plugin;
 pub mod policy;
 pub mod project;
+pub mod prompt;
 pub mod provider;
 pub mod providers;
 pub mod routing;
 pub mod runtime;
+pub mod runtime_set;
 pub mod scheduler;
 pub mod store;
 pub mod stores;

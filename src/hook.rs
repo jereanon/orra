@@ -26,8 +26,12 @@ pub trait Hook: Send + Sync {
     async fn after_provider_call(&self, _response: &CompletionResponse) {}
 
     /// Called before each individual tool is executed. You can modify the call
-    /// (e.g., change arguments, rename the tool).
-    async fn before_tool_call(&self, _call: &mut ToolCall) {}
+    /// (e.g., change arguments, rename the tool). Return `Err(reason)` to
+    /// block the tool call — the reason string becomes the tool result with
+    /// `is_error: true`.
+    async fn before_tool_call(&self, _call: &mut ToolCall) -> Result<(), String> {
+        Ok(())
+    }
 
     /// Called after each individual tool returns. You can modify the result
     /// (e.g., filter sensitive data, add metadata).
@@ -78,10 +82,11 @@ impl HookRegistry {
         }
     }
 
-    pub(crate) async fn dispatch_before_tool_call(&self, call: &mut ToolCall) {
+    pub(crate) async fn dispatch_before_tool_call(&self, call: &mut ToolCall) -> Result<(), String> {
         for hook in &self.hooks {
-            hook.before_tool_call(call).await;
+            hook.before_tool_call(call).await?;
         }
+        Ok(())
     }
 
     pub(crate) async fn dispatch_after_tool_call(&self, call: &ToolCall, result: &mut ToolResult) {
@@ -142,8 +147,9 @@ mod tests {
         async fn after_provider_call(&self, _response: &CompletionResponse) {
             self.after_provider.fetch_add(1, Ordering::SeqCst);
         }
-        async fn before_tool_call(&self, _call: &mut ToolCall) {
+        async fn before_tool_call(&self, _call: &mut ToolCall) -> Result<(), String> {
             self.before_tool.fetch_add(1, Ordering::SeqCst);
+            Ok(())
         }
         async fn after_tool_call(&self, _call: &ToolCall, _result: &mut ToolResult) {
             self.after_tool.fetch_add(1, Ordering::SeqCst);
@@ -170,6 +176,7 @@ mod tests {
             tools: vec![],
             max_tokens: None,
             temperature: None,
+            model: None,
         };
         registry.dispatch_before_provider_call(&mut request).await;
         assert_eq!(hook.before_provider.load(Ordering::SeqCst), 1);
@@ -222,6 +229,7 @@ mod tests {
             tools: vec![],
             max_tokens: None,
             temperature: Some(0.7),
+            model: None,
         };
 
         registry.dispatch_before_provider_call(&mut request).await;

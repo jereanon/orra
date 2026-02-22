@@ -123,6 +123,11 @@ pub enum WsMessage {
         model: Option<String>,
         /// Optional agent name to route this message to.
         agent: Option<String>,
+        /// Remote instance name for federation session proxy.
+        /// When set, the message is relayed to the named peer instead of
+        /// being processed locally.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        instance: Option<String>,
     },
 
     /// Server sends a text chunk (streaming).
@@ -383,6 +388,7 @@ mod tests {
             namespace: Some("test".into()),
             model: None,
             agent: None,
+            instance: None,
         };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains("\"type\":\"chat\""));

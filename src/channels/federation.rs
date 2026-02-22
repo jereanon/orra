@@ -5,9 +5,12 @@
 //!
 //! ## Protocol Overview
 //!
-//! - `GET  /api/federation/agents` → `Vec<RemoteAgentInfo>`
-//! - `POST /api/federation/relay`  → `RelayRequest` / `RelayResponse`
-//! - `GET  /api/federation/health` → `HealthStatus`
+//! - `GET  /api/federation/agents`        → `Vec<RemoteAgentInfo>`
+//! - `POST /api/federation/relay`         → `RelayRequest` / `RelayResponse`
+//! - `GET  /api/federation/health`        → `HealthStatus`
+//! - `GET  /api/federation/sessions`      → `Vec<FederatedSessionInfo>`
+//! - `GET  /api/federation/sessions/detail` → `FederatedSessionDetail`
+//! - `POST /api/federation/sessions/chat` → `SessionChatRequest` / `SessionChatResponse`
 //!
 //! Authentication: `Authorization: Bearer <shared_secret>`
 
@@ -73,6 +76,79 @@ pub struct HealthStatus {
     pub status: String,
     /// Number of agents available on this instance.
     pub agent_count: usize,
+}
+
+// ---------------------------------------------------------------------------
+// Session federation
+// ---------------------------------------------------------------------------
+
+/// Summary of a session exposed to federated peers.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FederatedSessionInfo {
+    /// Namespace key (e.g. "web:abc-123").
+    pub namespace: String,
+    /// Optional human-readable session name.
+    pub name: Option<String>,
+    /// Number of messages in the session.
+    pub message_count: usize,
+    /// ISO-8601 creation timestamp.
+    pub created_at: String,
+    /// ISO-8601 last-updated timestamp.
+    pub updated_at: String,
+    /// The instance that owns this session.
+    pub instance: String,
+}
+
+/// Full session detail including messages, for cross-instance viewing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FederatedSessionDetail {
+    /// Namespace key.
+    pub namespace: String,
+    /// All messages in the session.
+    pub messages: Vec<FederatedMessageInfo>,
+    /// ISO-8601 creation timestamp.
+    pub created_at: String,
+    /// ISO-8601 last-updated timestamp.
+    pub updated_at: String,
+    /// The instance that owns this session.
+    pub instance: String,
+}
+
+/// A single message within a federated session.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FederatedMessageInfo {
+    /// Role: "user", "assistant", "system".
+    pub role: String,
+    /// Message text content.
+    pub content: String,
+}
+
+/// Request to chat within a remote session (non-streaming).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionChatRequest {
+    /// Namespace of the target session.
+    pub namespace: String,
+    /// The user's message.
+    pub message: String,
+    /// Optional agent name to route to.
+    pub agent: Option<String>,
+    /// Optional model override.
+    pub model: Option<String>,
+    /// The peer instance originating this request.
+    pub source_peer: String,
+}
+
+/// Response from chatting in a remote session.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionChatResponse {
+    /// The agent's response text.
+    pub message: String,
+    /// Namespace of the session.
+    pub namespace: String,
+    /// The agent that responded (if known).
+    pub agent: Option<String>,
+    /// The instance that processed the request.
+    pub instance: String,
 }
 
 // ---------------------------------------------------------------------------

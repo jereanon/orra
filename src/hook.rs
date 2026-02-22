@@ -29,7 +29,7 @@ pub trait Hook: Send + Sync {
     /// (e.g., change arguments, rename the tool). Return `Err(reason)` to
     /// block the tool call — the reason string becomes the tool result with
     /// `is_error: true`.
-    async fn before_tool_call(&self, _call: &mut ToolCall) -> Result<(), String> {
+    async fn before_tool_call(&self, _namespace: &Namespace, _call: &mut ToolCall) -> Result<(), String> {
         Ok(())
     }
 
@@ -82,9 +82,9 @@ impl HookRegistry {
         }
     }
 
-    pub(crate) async fn dispatch_before_tool_call(&self, call: &mut ToolCall) -> Result<(), String> {
+    pub(crate) async fn dispatch_before_tool_call(&self, namespace: &Namespace, call: &mut ToolCall) -> Result<(), String> {
         for hook in &self.hooks {
-            hook.before_tool_call(call).await?;
+            hook.before_tool_call(namespace, call).await?;
         }
         Ok(())
     }
@@ -147,7 +147,7 @@ mod tests {
         async fn after_provider_call(&self, _response: &CompletionResponse) {
             self.after_provider.fetch_add(1, Ordering::SeqCst);
         }
-        async fn before_tool_call(&self, _call: &mut ToolCall) -> Result<(), String> {
+        async fn before_tool_call(&self, _ns: &Namespace, _call: &mut ToolCall) -> Result<(), String> {
             self.before_tool.fetch_add(1, Ordering::SeqCst);
             Ok(())
         }
@@ -194,7 +194,7 @@ mod tests {
             name: "test".into(),
             arguments: serde_json::json!({}),
         };
-        registry.dispatch_before_tool_call(&mut call).await;
+        registry.dispatch_before_tool_call(&ns, &mut call).await;
         assert_eq!(hook.before_tool.load(Ordering::SeqCst), 1);
 
         let mut result = ToolResult {

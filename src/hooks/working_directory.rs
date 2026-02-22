@@ -43,7 +43,7 @@ impl Hook for WorkingDirectoryHook {
         *self.current_dir.write().await = dir;
     }
 
-    async fn before_tool_call(&self, call: &mut ToolCall) -> Result<(), String> {
+    async fn before_tool_call(&self, _namespace: &Namespace, call: &mut ToolCall) -> Result<(), String> {
         if !DIR_AWARE_TOOLS.contains(&call.name.as_str()) {
             return Ok(());
         }
@@ -128,7 +128,7 @@ mod tests {
             arguments: serde_json::json!({"command": "ls"}),
         };
 
-        hook.before_tool_call(&mut call).await;
+        hook.before_tool_call(&ns, &mut call).await;
 
         assert_eq!(
             call.arguments.get("working_directory").and_then(|v| v.as_str()),
@@ -153,7 +153,7 @@ mod tests {
             arguments: serde_json::json!({"prompt": "list files"}),
         };
 
-        hook.before_tool_call(&mut call).await;
+        hook.before_tool_call(&ns, &mut call).await;
 
         assert_eq!(
             call.arguments.get("working_directory").and_then(|v| v.as_str()),
@@ -181,7 +181,7 @@ mod tests {
             }),
         };
 
-        hook.before_tool_call(&mut call).await;
+        hook.before_tool_call(&ns, &mut call).await;
 
         assert_eq!(
             call.arguments.get("working_directory").and_then(|v| v.as_str()),
@@ -206,7 +206,7 @@ mod tests {
             arguments: serde_json::json!({"query": "rust"}),
         };
 
-        hook.before_tool_call(&mut call).await;
+        hook.before_tool_call(&ns, &mut call).await;
 
         assert!(call.arguments.get("working_directory").is_none());
     }
@@ -214,6 +214,7 @@ mod tests {
     #[tokio::test]
     async fn no_injection_when_no_dir_set() {
         let hook = WorkingDirectoryHook::new();
+        let ns = Namespace::new("test");
 
         let mut call = ToolCall {
             id: "c1".into(),
@@ -221,7 +222,7 @@ mod tests {
             arguments: serde_json::json!({"command": "pwd"}),
         };
 
-        hook.before_tool_call(&mut call).await;
+        hook.before_tool_call(&ns, &mut call).await;
 
         assert!(call.arguments.get("working_directory").is_none());
     }

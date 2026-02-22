@@ -80,7 +80,7 @@ impl Hook for LoggingHook {
         );
     }
 
-    async fn before_tool_call(&self, call: &mut ToolCall) -> Result<(), String> {
+    async fn before_tool_call(&self, _namespace: &Namespace, call: &mut ToolCall) -> Result<(), String> {
         eprintln!("[tool] calling: {}", call.name);
         Ok(())
     }
@@ -148,7 +148,7 @@ mod tests {
             name: "test_tool".into(),
             arguments: serde_json::json!({}),
         };
-        hook.before_tool_call(&mut call).await;
+        hook.before_tool_call(&ns, &mut call).await;
 
         let mut result = ToolResult {
             call_id: "c1".into(),

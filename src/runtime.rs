@@ -177,7 +177,7 @@ impl<T: Tokenizer> Runtime<T> {
             session.push_message(response.message.clone());
 
             if response.finish_reason == FinishReason::ToolUse && !response.message.tool_calls.is_empty() {
-                let tool_results = self.execute_tool_calls(&response.message.tool_calls).await;
+                let tool_results = self.execute_tool_calls(namespace, &response.message.tool_calls).await;
                 let result_message = Message::tool_result(tool_results.clone());
                 session.push_message(result_message);
 
@@ -401,12 +401,12 @@ impl<T: Tokenizer> Runtime<T> {
         messages
     }
 
-    async fn execute_single_tool_call(&self, call: &ToolCall) -> ToolResult {
+    async fn execute_single_tool_call(&self, namespace: &Namespace, call: &ToolCall) -> ToolResult {
         let mut call = call.clone();
 
         // If any hook rejects the tool call, skip execution and return the
         // rejection reason as an error result.
-        if let Err(reason) = self.hooks.dispatch_before_tool_call(&mut call).await {
+        if let Err(reason) = self.hooks.dispatch_before_tool_call(namespace, &mut call).await {
             return ToolResult {
                 call_id: call.id.clone(),
                 content: reason,
@@ -442,13 +442,13 @@ impl<T: Tokenizer> Runtime<T> {
         result
     }
 
-    async fn execute_tool_calls(&self, tool_calls: &[ToolCall]) -> Vec<ToolResult> {
+    async fn execute_tool_calls(&self, namespace: &Namespace, tool_calls: &[ToolCall]) -> Vec<ToolResult> {
         #[cfg(feature = "parallel-tools")]
         {
             if self.config.parallel_tool_execution && tool_calls.len() > 1 {
                 let futs: Vec<_> = tool_calls
                     .iter()
-                    .map(|call| self.execute_single_tool_call(call))
+                    .map(|call| self.execute_single_tool_call(namespace, call))
                     .collect();
                 return futures::future::join_all(futs).await;
             }
@@ -457,7 +457,7 @@ impl<T: Tokenizer> Runtime<T> {
         // Sequential fallback
         let mut results = Vec::new();
         for call in tool_calls {
-            results.push(self.execute_single_tool_call(call).await);
+            results.push(self.execute_single_tool_call(namespace, call).await);
         }
         results
     }

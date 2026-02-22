@@ -54,11 +54,15 @@ impl StdioTransport {
 
         let mut child = cmd
             .spawn()
-            .map_err(|e| TransportError::Io(format!("failed to spawn {}: {}", program, e)))?;
+            .map_err(|e| TransportError::Io(format!("failed to spawn {program}: {e}")))?;
 
-        let stdin = child.stdin.take()
+        let stdin = child
+            .stdin
+            .take()
             .ok_or_else(|| TransportError::Io("no stdin".into()))?;
-        let stdout = child.stdout.take()
+        let stdout = child
+            .stdout
+            .take()
             .ok_or_else(|| TransportError::Io("no stdout".into()))?;
 
         Ok(Self {
@@ -77,14 +81,20 @@ impl McpTransport for StdioTransport {
         json.push('\n');
 
         let mut stdin = self.stdin.lock().await;
-        stdin.write_all(json.as_bytes()).await
+        stdin
+            .write_all(json.as_bytes())
+            .await
             .map_err(|e| TransportError::Io(e.to_string()))?;
-        stdin.flush().await
+        stdin
+            .flush()
+            .await
             .map_err(|e| TransportError::Io(e.to_string()))?;
 
         let mut stdout = self.stdout.lock().await;
         let mut line = String::new();
-        let bytes = stdout.read_line(&mut line).await
+        let bytes = stdout
+            .read_line(&mut line)
+            .await
             .map_err(|e| TransportError::Io(e.to_string()))?;
 
         if bytes == 0 {
@@ -92,7 +102,7 @@ impl McpTransport for StdioTransport {
         }
 
         let response: JsonRpcResponse = serde_json::from_str(line.trim())
-            .map_err(|e| TransportError::Serialization(format!("parse response: {}", e)))?;
+            .map_err(|e| TransportError::Serialization(format!("parse response: {e}")))?;
 
         Ok(response)
     }
@@ -132,7 +142,9 @@ impl MockTransport {
 #[async_trait]
 impl McpTransport for MockTransport {
     async fn send(&self, request: JsonRpcRequest) -> Result<JsonRpcResponse, TransportError> {
-        self.tx.send(request).await
+        self.tx
+            .send(request)
+            .await
             .map_err(|_| TransportError::Closed)?;
         let mut rx = self.rx.lock().await;
         rx.recv().await.ok_or(TransportError::Closed)

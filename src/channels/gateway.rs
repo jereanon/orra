@@ -154,10 +154,7 @@ pub enum WsMessage {
 
     /// Client responds with approval or denial for a tool call.
     #[serde(rename = "tool_approval_response")]
-    ToolApprovalResponse {
-        call_id: String,
-        approved: bool,
-    },
+    ToolApprovalResponse { call_id: String, approved: bool },
 
     /// Ping/pong for keepalive.
     #[serde(rename = "ping")]
@@ -236,9 +233,7 @@ impl GatewayChannel {
             .map_err(|_| GatewayError::ChannelClosed)?;
 
         // Wait for the runtime to process and respond
-        let result = rx
-            .await
-            .map_err(|_| GatewayError::ResponseDropped)?;
+        let result = rx.await.map_err(|_| GatewayError::ResponseDropped)?;
 
         match result {
             Ok(outbound) => Ok(ChatResponse {
@@ -272,7 +267,7 @@ impl GatewayChannel {
         let request_id = metadata
             .get("_gateway_request_id")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| GatewayError::MissingRequestId)?;
+            .ok_or(GatewayError::MissingRequestId)?;
 
         let sender = self
             .response_map
@@ -428,10 +423,10 @@ mod tests {
         let channel = GatewayChannel::new(GatewayConfig::default());
 
         // Simulate: spawn a task that submits a request
-        let channel_ref = &channel;
+        let _channel_ref = &channel;
         let submit_handle = tokio::spawn({
-            let inbound_tx = channel.inbound_tx.clone();
-            let response_map = channel.response_map.clone();
+            let _inbound_tx = channel.inbound_tx.clone();
+            let _response_map = channel.response_map.clone();
 
             async move {
                 // We need to call submit_and_wait from outside, but since we

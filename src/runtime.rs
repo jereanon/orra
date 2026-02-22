@@ -1,15 +1,15 @@
 use std::sync::Arc;
 
 use crate::context::{ContextBudget, ContextWindow, Tokenizer};
+use crate::hook::HookRegistry;
 use crate::message::{Message, ToolCall, ToolResult};
 use crate::namespace::Namespace;
 use crate::policy::PolicyRegistry;
 use crate::provider::{
-    CompletionRequest, CompletionResponse, FinishReason, Provider, ProviderError,
-    StreamEvent, StreamingProvider, Usage,
+    CompletionRequest, CompletionResponse, FinishReason, Provider, ProviderError, StreamEvent,
+    StreamingProvider, Usage,
 };
 use crate::store::{Session, SessionStore, StoreError};
-use crate::hook::HookRegistry;
 use crate::tool::ToolRegistry;
 
 #[derive(Debug, Clone)]
@@ -144,7 +144,9 @@ impl<T: Tokenizer> Runtime<T> {
             .await?
             .unwrap_or_else(|| Session::new(namespace.clone()));
 
-        self.hooks.dispatch_after_session_load(namespace, &session).await;
+        self.hooks
+            .dispatch_after_session_load(namespace, &session)
+            .await;
 
         session.push_message(user_message);
 
@@ -176,8 +178,12 @@ impl<T: Tokenizer> Runtime<T> {
 
             session.push_message(response.message.clone());
 
-            if response.finish_reason == FinishReason::ToolUse && !response.message.tool_calls.is_empty() {
-                let tool_results = self.execute_tool_calls(namespace, &response.message.tool_calls).await;
+            if response.finish_reason == FinishReason::ToolUse
+                && !response.message.tool_calls.is_empty()
+            {
+                let tool_results = self
+                    .execute_tool_calls(namespace, &response.message.tool_calls)
+                    .await;
                 let result_message = Message::tool_result(tool_results.clone());
                 session.push_message(result_message);
 
@@ -192,7 +198,9 @@ impl<T: Tokenizer> Runtime<T> {
                     tool_results: vec![],
                 });
 
-                self.hooks.dispatch_before_session_save(namespace, &mut session).await;
+                self.hooks
+                    .dispatch_before_session_save(namespace, &mut session)
+                    .await;
                 self.store.save(&session).await?;
 
                 return Ok(RunResult {
@@ -204,7 +212,9 @@ impl<T: Tokenizer> Runtime<T> {
         }
 
         // Exceeded max turns — save what we have and return an error
-        self.hooks.dispatch_before_session_save(namespace, &mut session).await;
+        self.hooks
+            .dispatch_before_session_save(namespace, &mut session)
+            .await;
         self.store.save(&session).await?;
         Err(RuntimeError::MaxTurnsExceeded(self.config.max_turns))
     }
@@ -218,7 +228,8 @@ impl<T: Tokenizer> Runtime<T> {
         namespace: &Namespace,
         user_message: Message,
     ) -> Result<tokio::sync::mpsc::Receiver<RuntimeStreamEvent>, RuntimeError> {
-        self.run_streaming_with_model(namespace, user_message, None).await
+        self.run_streaming_with_model(namespace, user_message, None)
+            .await
     }
 
     /// Run the agent loop with streaming and an optional model override.
@@ -231,9 +242,11 @@ impl<T: Tokenizer> Runtime<T> {
         let streaming_provider = self
             .streaming_provider
             .as_ref()
-            .ok_or_else(|| RuntimeError::Provider(ProviderError::Other(
-                "no streaming provider configured".into(),
-            )))?
+            .ok_or_else(|| {
+                RuntimeError::Provider(ProviderError::Other(
+                    "no streaming provider configured".into(),
+                ))
+            })?
             .clone();
 
         let mut session = self
@@ -242,7 +255,9 @@ impl<T: Tokenizer> Runtime<T> {
             .await?
             .unwrap_or_else(|| Session::new(namespace.clone()));
 
-        self.hooks.dispatch_after_session_load(namespace, &session).await;
+        self.hooks
+            .dispatch_after_session_load(namespace, &session)
+            .await;
         session.push_message(user_message);
 
         let (tx, rx) = tokio::sync::mpsc::channel(64);
@@ -274,7 +289,8 @@ impl<T: Tokenizer> Runtime<T> {
         tokio::spawn(async move {
             let mut text_content = String::new();
             let mut tool_calls: Vec<ToolCall> = Vec::new();
-            let mut tool_args_buffers: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+            let mut tool_args_buffers: std::collections::HashMap<String, String> =
+                std::collections::HashMap::new();
             let mut usage = Usage::default();
             let mut finish_reason = FinishReason::Stop;
 
@@ -288,10 +304,14 @@ impl<T: Tokenizer> Runtime<T> {
                     }
                     StreamEvent::ToolCallStart { id, name } => {
                         tool_args_buffers.insert(id.clone(), String::new());
-                        if tx.send(RuntimeStreamEvent::ToolCallStarted {
-                            id: id.clone(),
-                            name: name.clone(),
-                        }).await.is_err() {
+                        if tx
+                            .send(RuntimeStreamEvent::ToolCallStarted {
+                                id: id.clone(),
+                                name: name.clone(),
+                            })
+                            .await
+                            .is_err()
+                        {
                             return;
                         }
                         tool_calls.push(ToolCall {
@@ -300,12 +320,18 @@ impl<T: Tokenizer> Runtime<T> {
                             arguments: serde_json::Value::Null,
                         });
                     }
-                    StreamEvent::ToolCallDelta { id, arguments_delta } => {
+                    StreamEvent::ToolCallDelta {
+                        id,
+                        arguments_delta,
+                    } => {
                         if let Some(buf) = tool_args_buffers.get_mut(&id) {
                             buf.push_str(&arguments_delta);
                         }
                     }
-                    StreamEvent::Done { usage: u, finish_reason: fr } => {
+                    StreamEvent::Done {
+                        usage: u,
+                        finish_reason: fr,
+                    } => {
                         usage = u;
                         finish_reason = fr;
                     }
@@ -353,7 +379,11 @@ impl<T: Tokenizer> Runtime<T> {
                 });
 
                 let result = RunResult {
-                    final_message: session.messages.last().cloned().unwrap_or_else(|| Message::assistant("")),
+                    final_message: session
+                        .messages
+                        .last()
+                        .cloned()
+                        .unwrap_or_else(|| Message::assistant("")),
                     turns,
                     total_usage,
                 };
@@ -366,14 +396,20 @@ impl<T: Tokenizer> Runtime<T> {
                 });
 
                 let result = RunResult {
-                    final_message: session.messages.last().cloned().unwrap_or_else(|| Message::assistant("")),
+                    final_message: session
+                        .messages
+                        .last()
+                        .cloned()
+                        .unwrap_or_else(|| Message::assistant("")),
                     turns,
                     total_usage,
                 };
 
                 // Save session
                 if let Err(e) = store.save(&session).await {
-                    let _ = tx.send(RuntimeStreamEvent::Error(format!("save error: {e}"))).await;
+                    let _ = tx
+                        .send(RuntimeStreamEvent::Error(format!("save error: {e}")))
+                        .await;
                     return;
                 }
 
@@ -406,7 +442,11 @@ impl<T: Tokenizer> Runtime<T> {
 
         // If any hook rejects the tool call, skip execution and return the
         // rejection reason as an error result.
-        if let Err(reason) = self.hooks.dispatch_before_tool_call(namespace, &mut call).await {
+        if let Err(reason) = self
+            .hooks
+            .dispatch_before_tool_call(namespace, &mut call)
+            .await
+        {
             return ToolResult {
                 call_id: call.id.clone(),
                 content: reason,
@@ -438,11 +478,17 @@ impl<T: Tokenizer> Runtime<T> {
             }
         };
 
-        self.hooks.dispatch_after_tool_call(&call, &mut result).await;
+        self.hooks
+            .dispatch_after_tool_call(&call, &mut result)
+            .await;
         result
     }
 
-    async fn execute_tool_calls(&self, namespace: &Namespace, tool_calls: &[ToolCall]) -> Vec<ToolResult> {
+    async fn execute_tool_calls(
+        &self,
+        namespace: &Namespace,
+        tool_calls: &[ToolCall],
+    ) -> Vec<ToolResult> {
         #[cfg(feature = "parallel-tools")]
         {
             if self.config.parallel_tool_execution && tool_calls.len() > 1 {
@@ -492,7 +538,10 @@ mod tests {
 
     #[async_trait]
     impl Provider for MockProvider {
-        async fn complete(&self, _request: CompletionRequest) -> Result<CompletionResponse, ProviderError> {
+        async fn complete(
+            &self,
+            _request: CompletionRequest,
+        ) -> Result<CompletionResponse, ProviderError> {
             let idx = self.call_count.fetch_add(1, Ordering::SeqCst);
             if idx < self.responses.len() {
                 Ok(self.responses[idx].clone())
@@ -533,7 +582,14 @@ mod tests {
     ) -> Runtime<CharEstimator> {
         let provider = Arc::new(MockProvider::new(responses));
         let store = Arc::new(InMemoryStore::new());
-        Runtime::new(provider, store, tools, PolicyRegistry::default(), CharEstimator::default(), config)
+        Runtime::new(
+            provider,
+            store,
+            tools,
+            PolicyRegistry::default(),
+            CharEstimator::default(),
+            config,
+        )
     }
 
     #[tokio::test]
@@ -567,14 +623,23 @@ mod tests {
         let responses = vec![
             // First response: assistant wants to use a tool
             CompletionResponse {
-                message: Message::assistant_with_tool_calls("Let me uppercase that.", vec![tool_call]),
-                usage: Usage { input_tokens: 10, output_tokens: 15 },
+                message: Message::assistant_with_tool_calls(
+                    "Let me uppercase that.",
+                    vec![tool_call],
+                ),
+                usage: Usage {
+                    input_tokens: 10,
+                    output_tokens: 15,
+                },
                 finish_reason: FinishReason::ToolUse,
             },
             // Second response: after tool result, assistant gives final answer
             CompletionResponse {
                 message: Message::assistant("The uppercased text is: HELLO"),
-                usage: Usage { input_tokens: 30, output_tokens: 10 },
+                usage: Usage {
+                    input_tokens: 30,
+                    output_tokens: 10,
+                },
                 finish_reason: FinishReason::Stop,
             },
         ];
@@ -584,9 +649,15 @@ mod tests {
 
         let runtime = make_runtime(responses, tools, RuntimeConfig::default());
         let ns = Namespace::new("test");
-        let result = runtime.run(&ns, Message::user("Uppercase hello")).await.unwrap();
+        let result = runtime
+            .run(&ns, Message::user("Uppercase hello"))
+            .await
+            .unwrap();
 
-        assert_eq!(result.final_message.content, "The uppercased text is: HELLO");
+        assert_eq!(
+            result.final_message.content,
+            "The uppercased text is: HELLO"
+        );
         assert_eq!(result.turns.len(), 2);
         assert_eq!(result.turns[0].tool_results.len(), 1);
         assert_eq!(result.turns[0].tool_results[0].content, "HELLO");
@@ -606,21 +677,33 @@ mod tests {
         let responses = vec![
             CompletionResponse {
                 message: Message::assistant_with_tool_calls("Using a tool.", vec![tool_call]),
-                usage: Usage { input_tokens: 5, output_tokens: 5 },
+                usage: Usage {
+                    input_tokens: 5,
+                    output_tokens: 5,
+                },
                 finish_reason: FinishReason::ToolUse,
             },
             CompletionResponse {
                 message: Message::assistant("Sorry, that tool doesn't exist."),
-                usage: Usage { input_tokens: 10, output_tokens: 8 },
+                usage: Usage {
+                    input_tokens: 10,
+                    output_tokens: 8,
+                },
                 finish_reason: FinishReason::Stop,
             },
         ];
 
         let runtime = make_runtime(responses, ToolRegistry::new(), RuntimeConfig::default());
         let ns = Namespace::new("test");
-        let result = runtime.run(&ns, Message::user("Do something")).await.unwrap();
+        let result = runtime
+            .run(&ns, Message::user("Do something"))
+            .await
+            .unwrap();
 
-        assert_eq!(result.turns[0].tool_results[0].content, "unknown tool: nonexistent");
+        assert_eq!(
+            result.turns[0].tool_results[0].content,
+            "unknown tool: nonexistent"
+        );
         assert!(result.turns[0].tool_results[0].is_error);
     }
 
@@ -635,7 +718,10 @@ mod tests {
 
         let response = CompletionResponse {
             message: Message::assistant_with_tool_calls("Using tool.", vec![tool_call]),
-            usage: Usage { input_tokens: 5, output_tokens: 5 },
+            usage: Usage {
+                input_tokens: 5,
+                output_tokens: 5,
+            },
             finish_reason: FinishReason::ToolUse,
         };
 
@@ -719,7 +805,10 @@ mod tests {
 
         #[async_trait]
         impl Provider for InspectingProvider {
-            async fn complete(&self, request: CompletionRequest) -> Result<CompletionResponse, ProviderError> {
+            async fn complete(
+                &self,
+                request: CompletionRequest,
+            ) -> Result<CompletionResponse, ProviderError> {
                 if let Some(first) = request.messages.first() {
                     if first.role == crate::message::Role::System {
                         *self.had_system_prompt.lock().await = true;
@@ -784,7 +873,10 @@ mod tests {
             CharEstimator::default(),
             RuntimeConfig::default(),
         );
-        runtime1.run(&ns_alice, Message::user("Hi from Alice")).await.unwrap();
+        runtime1
+            .run(&ns_alice, Message::user("Hi from Alice"))
+            .await
+            .unwrap();
 
         let runtime2 = Runtime::new(
             provider2,
@@ -794,7 +886,10 @@ mod tests {
             CharEstimator::default(),
             RuntimeConfig::default(),
         );
-        runtime2.run(&ns_bob, Message::user("Hi from Bob")).await.unwrap();
+        runtime2
+            .run(&ns_bob, Message::user("Hi from Bob"))
+            .await
+            .unwrap();
 
         let alice_session = store.load(&ns_alice).await.unwrap().unwrap();
         let bob_session = store.load(&ns_bob).await.unwrap().unwrap();
@@ -815,8 +910,12 @@ mod tests {
 
         #[async_trait]
         impl Provider for CapturingProvider {
-            async fn complete(&self, request: CompletionRequest) -> Result<CompletionResponse, ProviderError> {
-                let tool_names: Vec<String> = request.tools.iter().map(|t| t.name.clone()).collect();
+            async fn complete(
+                &self,
+                request: CompletionRequest,
+            ) -> Result<CompletionResponse, ProviderError> {
+                let tool_names: Vec<String> =
+                    request.tools.iter().map(|t| t.name.clone()).collect();
                 self.seen_tools.lock().await.push(tool_names);
                 Ok(CompletionResponse {
                     message: Message::assistant("Done"),
@@ -864,7 +963,10 @@ mod tests {
         );
 
         // Run in the restricted namespace
-        runtime.run(&restricted_ns, Message::user("Hello")).await.unwrap();
+        runtime
+            .run(&restricted_ns, Message::user("Hello"))
+            .await
+            .unwrap();
 
         let seen = provider.seen_tools.lock().await;
         assert_eq!(seen.len(), 1);
@@ -918,28 +1020,55 @@ mod tests {
     #[tokio::test]
     async fn parallel_execution_faster_than_sequential() {
         let tool_calls = vec![
-            ToolCall { id: "c1".into(), name: "slow_a".into(), arguments: serde_json::json!({}) },
-            ToolCall { id: "c2".into(), name: "slow_b".into(), arguments: serde_json::json!({}) },
-            ToolCall { id: "c3".into(), name: "slow_c".into(), arguments: serde_json::json!({}) },
+            ToolCall {
+                id: "c1".into(),
+                name: "slow_a".into(),
+                arguments: serde_json::json!({}),
+            },
+            ToolCall {
+                id: "c2".into(),
+                name: "slow_b".into(),
+                arguments: serde_json::json!({}),
+            },
+            ToolCall {
+                id: "c3".into(),
+                name: "slow_c".into(),
+                arguments: serde_json::json!({}),
+            },
         ];
 
         let responses = vec![
             CompletionResponse {
                 message: Message::assistant_with_tool_calls("Running tools.", tool_calls.clone()),
-                usage: Usage { input_tokens: 10, output_tokens: 10 },
+                usage: Usage {
+                    input_tokens: 10,
+                    output_tokens: 10,
+                },
                 finish_reason: FinishReason::ToolUse,
             },
             CompletionResponse {
                 message: Message::assistant("All done."),
-                usage: Usage { input_tokens: 20, output_tokens: 5 },
+                usage: Usage {
+                    input_tokens: 20,
+                    output_tokens: 5,
+                },
                 finish_reason: FinishReason::Stop,
             },
         ];
 
         let mut tools = ToolRegistry::new();
-        tools.register(Box::new(SlowTool { name: "slow_a".into(), delay_ms: 100 }));
-        tools.register(Box::new(SlowTool { name: "slow_b".into(), delay_ms: 100 }));
-        tools.register(Box::new(SlowTool { name: "slow_c".into(), delay_ms: 100 }));
+        tools.register(Box::new(SlowTool {
+            name: "slow_a".into(),
+            delay_ms: 100,
+        }));
+        tools.register(Box::new(SlowTool {
+            name: "slow_b".into(),
+            delay_ms: 100,
+        }));
+        tools.register(Box::new(SlowTool {
+            name: "slow_c".into(),
+            delay_ms: 100,
+        }));
 
         let config = RuntimeConfig {
             parallel_tool_execution: true,
@@ -954,7 +1083,11 @@ mod tests {
         let elapsed = start.elapsed();
 
         // Parallel: should take ~100ms, not ~300ms
-        assert!(elapsed.as_millis() < 250, "took {}ms, expected <250ms", elapsed.as_millis());
+        assert!(
+            elapsed.as_millis() < 250,
+            "took {}ms, expected <250ms",
+            elapsed.as_millis()
+        );
         assert_eq!(result.turns[0].tool_results.len(), 3);
         assert_eq!(result.turns[0].tool_results[0].content, "done:slow_a");
         assert_eq!(result.turns[0].tool_results[1].content, "done:slow_b");
@@ -964,26 +1097,46 @@ mod tests {
     #[tokio::test]
     async fn sequential_execution_when_disabled() {
         let tool_calls = vec![
-            ToolCall { id: "c1".into(), name: "slow_a".into(), arguments: serde_json::json!({}) },
-            ToolCall { id: "c2".into(), name: "slow_b".into(), arguments: serde_json::json!({}) },
+            ToolCall {
+                id: "c1".into(),
+                name: "slow_a".into(),
+                arguments: serde_json::json!({}),
+            },
+            ToolCall {
+                id: "c2".into(),
+                name: "slow_b".into(),
+                arguments: serde_json::json!({}),
+            },
         ];
 
         let responses = vec![
             CompletionResponse {
                 message: Message::assistant_with_tool_calls("Running tools.", tool_calls.clone()),
-                usage: Usage { input_tokens: 10, output_tokens: 10 },
+                usage: Usage {
+                    input_tokens: 10,
+                    output_tokens: 10,
+                },
                 finish_reason: FinishReason::ToolUse,
             },
             CompletionResponse {
                 message: Message::assistant("Done."),
-                usage: Usage { input_tokens: 20, output_tokens: 5 },
+                usage: Usage {
+                    input_tokens: 20,
+                    output_tokens: 5,
+                },
                 finish_reason: FinishReason::Stop,
             },
         ];
 
         let mut tools = ToolRegistry::new();
-        tools.register(Box::new(SlowTool { name: "slow_a".into(), delay_ms: 50 }));
-        tools.register(Box::new(SlowTool { name: "slow_b".into(), delay_ms: 50 }));
+        tools.register(Box::new(SlowTool {
+            name: "slow_a".into(),
+            delay_ms: 50,
+        }));
+        tools.register(Box::new(SlowTool {
+            name: "slow_b".into(),
+            delay_ms: 50,
+        }));
 
         let config = RuntimeConfig {
             parallel_tool_execution: false,
@@ -998,7 +1151,11 @@ mod tests {
         let elapsed = start.elapsed();
 
         // Sequential: should take >= 100ms (50 + 50)
-        assert!(elapsed.as_millis() >= 90, "took {}ms, expected >=90ms", elapsed.as_millis());
+        assert!(
+            elapsed.as_millis() >= 90,
+            "took {}ms, expected >=90ms",
+            elapsed.as_millis()
+        );
         assert_eq!(result.turns[0].tool_results.len(), 2);
     }
 
@@ -1006,28 +1163,52 @@ mod tests {
     #[tokio::test]
     async fn parallel_one_error_doesnt_block_others() {
         let tool_calls = vec![
-            ToolCall { id: "c1".into(), name: "slow_a".into(), arguments: serde_json::json!({}) },
-            ToolCall { id: "c2".into(), name: "failing".into(), arguments: serde_json::json!({}) },
-            ToolCall { id: "c3".into(), name: "slow_b".into(), arguments: serde_json::json!({}) },
+            ToolCall {
+                id: "c1".into(),
+                name: "slow_a".into(),
+                arguments: serde_json::json!({}),
+            },
+            ToolCall {
+                id: "c2".into(),
+                name: "failing".into(),
+                arguments: serde_json::json!({}),
+            },
+            ToolCall {
+                id: "c3".into(),
+                name: "slow_b".into(),
+                arguments: serde_json::json!({}),
+            },
         ];
 
         let responses = vec![
             CompletionResponse {
                 message: Message::assistant_with_tool_calls("Running.", tool_calls.clone()),
-                usage: Usage { input_tokens: 10, output_tokens: 10 },
+                usage: Usage {
+                    input_tokens: 10,
+                    output_tokens: 10,
+                },
                 finish_reason: FinishReason::ToolUse,
             },
             CompletionResponse {
                 message: Message::assistant("Handled."),
-                usage: Usage { input_tokens: 20, output_tokens: 5 },
+                usage: Usage {
+                    input_tokens: 20,
+                    output_tokens: 5,
+                },
                 finish_reason: FinishReason::Stop,
             },
         ];
 
         let mut tools = ToolRegistry::new();
-        tools.register(Box::new(SlowTool { name: "slow_a".into(), delay_ms: 50 }));
+        tools.register(Box::new(SlowTool {
+            name: "slow_a".into(),
+            delay_ms: 50,
+        }));
         tools.register(Box::new(FailingTool));
-        tools.register(Box::new(SlowTool { name: "slow_b".into(), delay_ms: 50 }));
+        tools.register(Box::new(SlowTool {
+            name: "slow_b".into(),
+            delay_ms: 50,
+        }));
 
         let runtime = make_runtime(responses, tools, RuntimeConfig::default());
         let ns = Namespace::new("test");
@@ -1047,27 +1228,47 @@ mod tests {
     #[tokio::test]
     async fn parallel_results_maintain_call_id_ordering() {
         let tool_calls = vec![
-            ToolCall { id: "first".into(), name: "slow_a".into(), arguments: serde_json::json!({}) },
-            ToolCall { id: "second".into(), name: "slow_b".into(), arguments: serde_json::json!({}) },
+            ToolCall {
+                id: "first".into(),
+                name: "slow_a".into(),
+                arguments: serde_json::json!({}),
+            },
+            ToolCall {
+                id: "second".into(),
+                name: "slow_b".into(),
+                arguments: serde_json::json!({}),
+            },
         ];
 
         let responses = vec![
             CompletionResponse {
                 message: Message::assistant_with_tool_calls("Go.", tool_calls.clone()),
-                usage: Usage { input_tokens: 10, output_tokens: 10 },
+                usage: Usage {
+                    input_tokens: 10,
+                    output_tokens: 10,
+                },
                 finish_reason: FinishReason::ToolUse,
             },
             CompletionResponse {
                 message: Message::assistant("Done."),
-                usage: Usage { input_tokens: 20, output_tokens: 5 },
+                usage: Usage {
+                    input_tokens: 20,
+                    output_tokens: 5,
+                },
                 finish_reason: FinishReason::Stop,
             },
         ];
 
         let mut tools = ToolRegistry::new();
         // slow_a takes longer but should still be first in results
-        tools.register(Box::new(SlowTool { name: "slow_a".into(), delay_ms: 80 }));
-        tools.register(Box::new(SlowTool { name: "slow_b".into(), delay_ms: 10 }));
+        tools.register(Box::new(SlowTool {
+            name: "slow_a".into(),
+            delay_ms: 80,
+        }));
+        tools.register(Box::new(SlowTool {
+            name: "slow_b".into(),
+            delay_ms: 10,
+        }));
 
         let runtime = make_runtime(responses, tools, RuntimeConfig::default());
         let ns = Namespace::new("test");
@@ -1155,7 +1356,10 @@ mod tests {
 
         #[async_trait]
         impl Provider for CapturingProvider {
-            async fn complete(&self, request: CompletionRequest) -> Result<CompletionResponse, ProviderError> {
+            async fn complete(
+                &self,
+                request: CompletionRequest,
+            ) -> Result<CompletionResponse, ProviderError> {
                 self.temps.lock().await.push(request.temperature);
                 Ok(CompletionResponse {
                     message: Message::assistant("Ok"),
@@ -1252,9 +1456,15 @@ mod tests {
         runtime.set_hooks(hooks);
 
         let ns = Namespace::new("test");
-        let result = runtime.run(&ns, Message::user("Show secret")).await.unwrap();
+        let result = runtime
+            .run(&ns, Message::user("Show secret"))
+            .await
+            .unwrap();
 
-        assert_eq!(result.turns[0].tool_results[0].content, "the [REDACTED] is 42");
+        assert_eq!(
+            result.turns[0].tool_results[0].content,
+            "the [REDACTED] is 42"
+        );
     }
 
     // --- Streaming tests ---
@@ -1267,7 +1477,10 @@ mod tests {
 
         #[async_trait]
         impl Provider for MockStreamProvider {
-            async fn complete(&self, _request: CompletionRequest) -> Result<CompletionResponse, ProviderError> {
+            async fn complete(
+                &self,
+                _request: CompletionRequest,
+            ) -> Result<CompletionResponse, ProviderError> {
                 Ok(CompletionResponse {
                     message: Message::assistant("fallback"),
                     usage: Usage::default(),
@@ -1286,10 +1499,15 @@ mod tests {
                 tokio::spawn(async move {
                     let _ = tx.send(StreamEvent::TextDelta("Hello".into())).await;
                     let _ = tx.send(StreamEvent::TextDelta(" world!".into())).await;
-                    let _ = tx.send(StreamEvent::Done {
-                        usage: Usage { input_tokens: 10, output_tokens: 5 },
-                        finish_reason: FinishReason::Stop,
-                    }).await;
+                    let _ = tx
+                        .send(StreamEvent::Done {
+                            usage: Usage {
+                                input_tokens: 10,
+                                output_tokens: 5,
+                            },
+                            finish_reason: FinishReason::Stop,
+                        })
+                        .await;
                 });
                 Ok(rx)
             }
@@ -1308,7 +1526,10 @@ mod tests {
         runtime.set_streaming_provider(provider);
 
         let ns = Namespace::new("test");
-        let mut rx = runtime.run_streaming(&ns, Message::user("Hi")).await.unwrap();
+        let mut rx = runtime
+            .run_streaming(&ns, Message::user("Hi"))
+            .await
+            .unwrap();
 
         let mut texts = Vec::new();
         let mut got_done = false;
@@ -1333,10 +1554,13 @@ mod tests {
     async fn run_streaming_errors_without_provider() {
         let runtime = make_runtime(vec![], ToolRegistry::new(), RuntimeConfig::default());
         let ns = Namespace::new("test");
-        let err = runtime.run_streaming(&ns, Message::user("Hi")).await.unwrap_err();
+        let err = runtime
+            .run_streaming(&ns, Message::user("Hi"))
+            .await
+            .unwrap_err();
         match err {
             RuntimeError::Provider(_) => {}
-            other => panic!("expected Provider error, got {:?}", other),
+            other => panic!("expected Provider error, got {other:?}"),
         }
     }
 }

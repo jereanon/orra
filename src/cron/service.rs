@@ -9,8 +9,7 @@ use super::types::{CronJob, CronJobStatus};
 /// Callback invoked when a cron job fires.
 ///
 /// Receives the job and returns a future that resolves when execution completes.
-pub type CronCallback =
-    Arc<dyn Fn(CronJob) -> tokio::task::JoinHandle<()> + Send + Sync>;
+pub type CronCallback = Arc<dyn Fn(CronJob) -> tokio::task::JoinHandle<()> + Send + Sync>;
 
 /// The cron service manages scheduled jobs, persists them, and fires them.
 pub struct CronService {
@@ -55,7 +54,7 @@ impl CronService {
     pub async fn delete_job(&self, id: &str) -> Result<bool, CronStoreError> {
         let deleted = self.store.delete(id).await?;
         if deleted {
-            eprintln!("[cron] Deleted job {}", id);
+            eprintln!("[cron] Deleted job {id}");
         }
         Ok(deleted)
     }
@@ -104,7 +103,7 @@ impl CronService {
                         let jobs = match store.list().await {
                             Ok(j) => j,
                             Err(e) => {
-                                eprintln!("[cron] Error listing jobs: {}", e);
+                                eprintln!("[cron] Error listing jobs: {e}");
                                 continue;
                             }
                         };
@@ -121,12 +120,12 @@ impl CronService {
 
                             // Persist updated state
                             if let Err(e) = store.save(&job).await {
-                                eprintln!("[cron] Error saving job state: {}", e);
+                                eprintln!("[cron] Error saving job state: {e}");
                             }
 
                             // Invoke the callback
                             if let Some(ref cb) = *cb {
-                                let _ = cb(job);
+                                drop(cb(job));
                             }
                         }
                     }
@@ -162,11 +161,11 @@ impl CronService {
 
             job.mark_fired(now);
             if let Err(e) = self.store.save(&job).await {
-                eprintln!("[cron] Error saving job state: {}", e);
+                eprintln!("[cron] Error saving job state: {e}");
             }
 
             if let Some(ref cb) = *cb {
-                let _ = cb(job);
+                drop(cb(job));
             }
         }
     }
@@ -202,7 +201,6 @@ mod tests {
     use super::*;
     use crate::cron::store::InMemoryCronStore;
     use crate::cron::types::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn make_service() -> CronService {
         let store = Arc::new(InMemoryCronStore::new());
@@ -216,7 +214,9 @@ mod tests {
         let job = CronJob::new(
             "test",
             CronScheduleType::Every { interval_ms: 60000 },
-            CronPayload::SystemEvent { message: "hi".into() },
+            CronPayload::SystemEvent {
+                message: "hi".into(),
+            },
             "ns",
         );
         svc.add_job(job).await.unwrap();
@@ -233,7 +233,9 @@ mod tests {
         let job = CronJob::new(
             "temp",
             CronScheduleType::Every { interval_ms: 60000 },
-            CronPayload::SystemEvent { message: "bye".into() },
+            CronPayload::SystemEvent {
+                message: "bye".into(),
+            },
             "ns",
         );
         let id = job.id.clone();
@@ -251,7 +253,9 @@ mod tests {
         let job = CronJob::new(
             "toggle",
             CronScheduleType::Every { interval_ms: 60000 },
-            CronPayload::SystemEvent { message: "x".into() },
+            CronPayload::SystemEvent {
+                message: "x".into(),
+            },
             "ns",
         );
         let id = job.id.clone();

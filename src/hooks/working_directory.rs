@@ -43,7 +43,11 @@ impl Hook for WorkingDirectoryHook {
         *self.current_dir.write().await = dir;
     }
 
-    async fn before_tool_call(&self, _namespace: &Namespace, call: &mut ToolCall) -> Result<(), String> {
+    async fn before_tool_call(
+        &self,
+        _namespace: &Namespace,
+        call: &mut ToolCall,
+    ) -> Result<(), String> {
         if !DIR_AWARE_TOOLS.contains(&call.name.as_str()) {
             return Ok(());
         }
@@ -97,10 +101,9 @@ mod tests {
 
         // First, set a directory
         let mut session = Session::new(ns.clone());
-        session.metadata.insert(
-            "working_directory".into(),
-            serde_json::json!("/some/path"),
-        );
+        session
+            .metadata
+            .insert("working_directory".into(), serde_json::json!("/some/path"));
         hook.after_session_load(&ns, &session).await;
 
         // Now load a session without the metadata
@@ -116,10 +119,9 @@ mod tests {
         let hook = WorkingDirectoryHook::new();
         let ns = Namespace::new("test");
         let mut session = Session::new(ns.clone());
-        session.metadata.insert(
-            "working_directory".into(),
-            serde_json::json!("/my/project"),
-        );
+        session
+            .metadata
+            .insert("working_directory".into(), serde_json::json!("/my/project"));
         hook.after_session_load(&ns, &session).await;
 
         let mut call = ToolCall {
@@ -128,10 +130,12 @@ mod tests {
             arguments: serde_json::json!({"command": "ls"}),
         };
 
-        hook.before_tool_call(&ns, &mut call).await;
+        let _ = hook.before_tool_call(&ns, &mut call).await;
 
         assert_eq!(
-            call.arguments.get("working_directory").and_then(|v| v.as_str()),
+            call.arguments
+                .get("working_directory")
+                .and_then(|v| v.as_str()),
             Some("/my/project")
         );
     }
@@ -141,10 +145,9 @@ mod tests {
         let hook = WorkingDirectoryHook::new();
         let ns = Namespace::new("test");
         let mut session = Session::new(ns.clone());
-        session.metadata.insert(
-            "working_directory".into(),
-            serde_json::json!("/my/project"),
-        );
+        session
+            .metadata
+            .insert("working_directory".into(), serde_json::json!("/my/project"));
         hook.after_session_load(&ns, &session).await;
 
         let mut call = ToolCall {
@@ -153,10 +156,12 @@ mod tests {
             arguments: serde_json::json!({"prompt": "list files"}),
         };
 
-        hook.before_tool_call(&ns, &mut call).await;
+        let _ = hook.before_tool_call(&ns, &mut call).await;
 
         assert_eq!(
-            call.arguments.get("working_directory").and_then(|v| v.as_str()),
+            call.arguments
+                .get("working_directory")
+                .and_then(|v| v.as_str()),
             Some("/my/project")
         );
     }
@@ -181,10 +186,12 @@ mod tests {
             }),
         };
 
-        hook.before_tool_call(&ns, &mut call).await;
+        let _ = hook.before_tool_call(&ns, &mut call).await;
 
         assert_eq!(
-            call.arguments.get("working_directory").and_then(|v| v.as_str()),
+            call.arguments
+                .get("working_directory")
+                .and_then(|v| v.as_str()),
             Some("/explicit/dir")
         );
     }
@@ -194,10 +201,9 @@ mod tests {
         let hook = WorkingDirectoryHook::new();
         let ns = Namespace::new("test");
         let mut session = Session::new(ns.clone());
-        session.metadata.insert(
-            "working_directory".into(),
-            serde_json::json!("/my/project"),
-        );
+        session
+            .metadata
+            .insert("working_directory".into(), serde_json::json!("/my/project"));
         hook.after_session_load(&ns, &session).await;
 
         let mut call = ToolCall {
@@ -206,7 +212,7 @@ mod tests {
             arguments: serde_json::json!({"query": "rust"}),
         };
 
-        hook.before_tool_call(&ns, &mut call).await;
+        let _ = hook.before_tool_call(&ns, &mut call).await;
 
         assert!(call.arguments.get("working_directory").is_none());
     }
@@ -222,7 +228,7 @@ mod tests {
             arguments: serde_json::json!({"command": "pwd"}),
         };
 
-        hook.before_tool_call(&ns, &mut call).await;
+        let _ = hook.before_tool_call(&ns, &mut call).await;
 
         assert!(call.arguments.get("working_directory").is_none());
     }

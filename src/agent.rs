@@ -111,9 +111,7 @@ pub fn resolve_agents(
     }
 
     vec![AgentProfile {
-        name: legacy_name
-            .unwrap_or("Atlas")
-            .to_string(),
+        name: legacy_name.unwrap_or("Atlas").to_string(),
         personality: legacy_personality
             .unwrap_or("friendly, helpful, and concise")
             .to_string(),
@@ -139,7 +137,10 @@ pub fn resolve_agents(
 /// assert_eq!(agent, Some("CodeBot"));
 /// assert_eq!(cleaned, " help me");
 /// ```
-pub fn detect_agent_mention<'a>(content: &str, agent_names: &'a [String]) -> (Option<&'a str>, String) {
+pub fn detect_agent_mention<'a>(
+    content: &str,
+    agent_names: &'a [String],
+) -> (Option<&'a str>, String) {
     let content_lower = content.to_lowercase();
     for name in agent_names {
         let pattern = format!("@{}", name.to_lowercase());
@@ -147,8 +148,7 @@ pub fn detect_agent_mention<'a>(content: &str, agent_names: &'a [String]) -> (Op
             // Check that it's a word boundary (not part of a longer word)
             let end = pos + pattern.len();
             let at_end = end >= content.len();
-            let next_is_boundary = at_end
-                || !content.as_bytes()[end].is_ascii_alphanumeric();
+            let next_is_boundary = at_end || !content.as_bytes()[end].is_ascii_alphanumeric();
             if next_is_boundary {
                 // Strip the @mention from content
                 let mut cleaned = String::with_capacity(content.len());
@@ -179,8 +179,7 @@ mod tests {
 
     #[test]
     fn agent_profile_with_system_prompt() {
-        let profile = AgentProfile::new("Helper")
-            .with_system_prompt("You are a pirate.");
+        let profile = AgentProfile::new("Helper").with_system_prompt("You are a pirate.");
 
         assert_eq!(profile.system_prompt.as_deref(), Some("You are a pirate."));
     }
@@ -195,10 +194,7 @@ mod tests {
 
     #[test]
     fn resolve_agents_uses_explicit_list() {
-        let agents = vec![
-            AgentProfile::new("Atlas"),
-            AgentProfile::new("CodeBot"),
-        ];
+        let agents = vec![AgentProfile::new("Atlas"), AgentProfile::new("CodeBot")];
 
         let resolved = resolve_agents(&agents, Some("OldName"), None, None);
         assert_eq!(resolved.len(), 2);
@@ -208,16 +204,14 @@ mod tests {
 
     #[test]
     fn resolve_agents_falls_back_to_legacy() {
-        let resolved = resolve_agents(
-            &[],
-            Some("MyBot"),
-            Some("snarky"),
-            Some("You are snarky."),
-        );
+        let resolved = resolve_agents(&[], Some("MyBot"), Some("snarky"), Some("You are snarky."));
         assert_eq!(resolved.len(), 1);
         assert_eq!(resolved[0].name, "MyBot");
         assert_eq!(resolved[0].personality, "snarky");
-        assert_eq!(resolved[0].system_prompt.as_deref(), Some("You are snarky."));
+        assert_eq!(
+            resolved[0].system_prompt.as_deref(),
+            Some("You are snarky.")
+        );
     }
 
     #[test]

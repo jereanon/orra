@@ -3,8 +3,9 @@ use std::collections::HashMap;
 use crate::namespace::Namespace;
 use crate::tool::ToolDefinition;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum ToolPolicy {
+    #[default]
     AllowAll,
     DenyAll,
     AllowList(Vec<String>),
@@ -27,12 +28,6 @@ impl ToolPolicy {
             .filter(|d| self.is_allowed(&d.name))
             .cloned()
             .collect()
-    }
-}
-
-impl Default for ToolPolicy {
-    fn default() -> Self {
-        ToolPolicy::AllowAll
     }
 }
 

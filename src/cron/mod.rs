@@ -4,4 +4,4 @@ pub mod types;
 
 pub use service::CronService;
 pub use store::{CronStore, CronStoreError, FileCronStore, InMemoryCronStore};
-pub use types::{CronDelivery, CronJob, CronPayload, CronScheduleType, CronJobStatus};
+pub use types::{CronDelivery, CronJob, CronJobStatus, CronPayload, CronScheduleType};

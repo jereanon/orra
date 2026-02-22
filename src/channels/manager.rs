@@ -21,21 +21,12 @@ use crate::runtime::Runtime;
 // ---------------------------------------------------------------------------
 
 /// Current state of a managed channel connection.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ChannelState {
     /// Whether the channel is currently connected and running.
     pub connected: bool,
     /// Application-specific metadata about the connection.
     pub metadata: HashMap<String, String>,
-}
-
-impl Default for ChannelState {
-    fn default() -> Self {
-        Self {
-            connected: false,
-            metadata: HashMap::new(),
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -88,7 +79,7 @@ pub struct ChannelManager<T: Tokenizer + 'static> {
     default_agent: RwLock<String>,
     /// Current connection state.
     state: RwLock<ChannelState>,
-    /// The active channel (if any), stored as an Arc<dyn Channel> since
+    /// The active channel (if any), stored as an `Arc<dyn Channel>` since
     /// we also need it for shutdown signaling.
     active_channel: RwLock<Option<Arc<dyn ShutdownSignal>>>,
     /// The background task running the adapter/router loop.
@@ -170,14 +161,12 @@ impl<T: Tokenizer + 'static> ChannelManager<T> {
                 router.add_channel(&name, channel_for_task);
                 let default_key = default_agent_name.to_lowercase();
                 if let Err(e) = router.run(&runtimes_snapshot, Some(&default_key)).await {
-                    eprintln!("[channel-manager] Router error on '{}': {}", name, e);
+                    eprintln!("[channel-manager] Router error on '{name}': {e}");
                 }
-            } else {
-                if let Err(e) = ChannelAdapter::run(channel.as_ref(), &runtime).await {
-                    eprintln!("[channel-manager] Adapter error on '{}': {}", name, e);
-                }
+            } else if let Err(e) = ChannelAdapter::run(channel.as_ref(), &runtime).await {
+                eprintln!("[channel-manager] Adapter error on '{name}': {e}");
             }
-            eprintln!("[channel-manager] Channel '{}' stopped", name);
+            eprintln!("[channel-manager] Channel '{name}' stopped");
         });
 
         *self.active_channel.write().await = Some(shutdown_signal);
@@ -221,7 +210,9 @@ mod tests {
     use crate::message::Message;
     use crate::namespace::Namespace;
     use crate::policy::PolicyRegistry;
-    use crate::provider::{CompletionRequest, CompletionResponse, FinishReason, Provider, ProviderError, Usage};
+    use crate::provider::{
+        CompletionRequest, CompletionResponse, FinishReason, Provider, ProviderError, Usage,
+    };
     use crate::store::InMemoryStore;
     use crate::tool::ToolRegistry;
     use async_trait::async_trait;
@@ -251,7 +242,10 @@ mod tests {
         }
 
         async fn send(&self, response: OutboundMessage) -> Result<(), ChannelError> {
-            self.outbound_tx.send(response).await.map_err(|_| ChannelError::Closed)
+            self.outbound_tx
+                .send(response)
+                .await
+                .map_err(|_| ChannelError::Closed)
         }
 
         async fn send_error(&self, _error: OutboundError) -> Result<(), ChannelError> {

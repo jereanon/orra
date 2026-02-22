@@ -36,7 +36,10 @@ async fn main() {
 
     // Parse owner/repo from args or env
     let args: Vec<String> = std::env::args().collect();
-    let repo_arg = args.get(1).cloned().or_else(|| std::env::var("GITHUB_REPO").ok());
+    let repo_arg = args
+        .get(1)
+        .cloned()
+        .or_else(|| std::env::var("GITHUB_REPO").ok());
 
     let (owner, repo) = match repo_arg {
         Some(ref r) if r.contains('/') => {
@@ -51,7 +54,8 @@ async fn main() {
         }
     };
 
-    let model = std::env::var("AGENTIC_MODEL").unwrap_or_else(|_| "claude-sonnet-4-5-20250929".into());
+    let model =
+        std::env::var("AGENTIC_MODEL").unwrap_or_else(|_| "claude-sonnet-4-5-20250929".into());
 
     let gh = GitHubConfig::new(&gh_token, &owner, &repo);
 
@@ -78,10 +82,10 @@ async fn main() {
         config,
     );
 
-    let ns = Namespace::new("github").child(&format!("{}/{}", owner, repo));
+    let ns = Namespace::new("github").child(format!("{owner}/{repo}"));
 
     println!("=== GitHub Issues Assistant ===");
-    println!("Repository: {}/{}", owner, repo);
+    println!("Repository: {owner}/{repo}");
     println!("Type your request, or /quit to exit.");
     println!();
 
@@ -128,7 +132,7 @@ async fn main() {
                 println!();
             }
             Err(e) => {
-                eprintln!("Error: {}", e);
+                eprintln!("Error: {e}");
                 println!();
             }
         }

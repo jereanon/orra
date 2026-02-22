@@ -127,16 +127,14 @@ async fn run_claude(
         .await
         .map_err(|_| {
             ToolError::ExecutionFailed(format!(
-                "Claude CLI timed out after {} seconds. Consider breaking the task \
-                 into smaller pieces or increasing the timeout.",
-                timeout_secs
+                "Claude CLI timed out after {timeout_secs} seconds. Consider breaking the task \
+                 into smaller pieces or increasing the timeout."
             ))
         })?
         .map_err(|e| {
             ToolError::ExecutionFailed(format!(
-                "Failed to run claude CLI: {}. Make sure the `claude` command is \
-                 installed and available in PATH.",
-                e
+                "Failed to run claude CLI: {e}. Make sure the `claude` command is \
+                 installed and available in PATH."
             ))
         })?;
 
@@ -292,27 +290,19 @@ impl Tool for ClaudeCodeResumeTool {
         let session_id = input
             .get("session_id")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                ToolError::InvalidInput("missing required field 'session_id'".into())
-            })?;
+            .ok_or_else(|| ToolError::InvalidInput("missing required field 'session_id'".into()))?;
 
         let follow_up = input
             .get("follow_up")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                ToolError::InvalidInput("missing required field 'follow_up'".into())
-            })?;
+            .ok_or_else(|| ToolError::InvalidInput("missing required field 'follow_up'".into()))?;
 
         if session_id.trim().is_empty() {
-            return Err(ToolError::InvalidInput(
-                "session_id cannot be empty".into(),
-            ));
+            return Err(ToolError::InvalidInput("session_id cannot be empty".into()));
         }
 
         if follow_up.trim().is_empty() {
-            return Err(ToolError::InvalidInput(
-                "follow_up cannot be empty".into(),
-            ));
+            return Err(ToolError::InvalidInput("follow_up cannot be empty".into()));
         }
 
         let mut args = vec![
@@ -419,7 +409,8 @@ mod tests {
 
     #[test]
     fn format_response_success() {
-        let json = r#"{"result":"done","session_id":"sess_123","duration_ms":5000,"is_error":false}"#;
+        let json =
+            r#"{"result":"done","session_id":"sess_123","duration_ms":5000,"is_error":false}"#;
         let result = format_response(json).unwrap();
         assert!(result.contains("sess_123"));
         assert!(result.contains("5.0s"));

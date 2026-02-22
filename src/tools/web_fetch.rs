@@ -68,7 +68,7 @@ impl Tool for WebFetchTool {
             .get(url)
             .send()
             .await
-            .map_err(|e| ToolError::ExecutionFailed(format!("fetch error: {}", e)))?;
+            .map_err(|e| ToolError::ExecutionFailed(format!("fetch error: {e}")))?;
 
         let status = resp.status();
         if !status.is_success() {
@@ -89,7 +89,7 @@ impl Tool for WebFetchTool {
         let body = resp
             .text()
             .await
-            .map_err(|e| ToolError::ExecutionFailed(format!("read error: {}", e)))?;
+            .map_err(|e| ToolError::ExecutionFailed(format!("read error: {e}")))?;
 
         // Simple HTML-to-text extraction
         let text = if content_type.contains("text/html") {
@@ -101,7 +101,12 @@ impl Tool for WebFetchTool {
         // Truncate if needed
         let text = if text.len() > max_length {
             let truncated = &text[..max_length];
-            format!("{}\n\n[Truncated — {} of {} characters shown]", truncated, max_length, text.len())
+            format!(
+                "{}\n\n[Truncated — {} of {} characters shown]",
+                truncated,
+                max_length,
+                text.len()
+            )
         } else {
             text
         };

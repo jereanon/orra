@@ -74,13 +74,13 @@ async fn main() {
     let channel_config = DiscordChannelConfig::new(dc).with_filter(filter);
     let channel = DiscordChannel::new(channel_config);
 
-    println!("=== {} — Discord Bot ===", bot_name);
+    println!("=== {bot_name} — Discord Bot ===");
     println!("Connecting to Discord Gateway...");
 
     match channel.connect().await {
         Ok(()) => println!("Connected! Listening for messages..."),
         Err(e) => {
-            eprintln!("Failed to connect: {}", e);
+            eprintln!("Failed to connect: {e}");
             std::process::exit(1);
         }
     }
@@ -91,6 +91,6 @@ async fn main() {
     // Run the channel adapter loop — receives Discord messages, processes
     // them through the runtime, and sends responses back to Discord.
     if let Err(e) = ChannelAdapter::run(&channel, &runtime).await {
-        eprintln!("Runtime error: {}", e);
+        eprintln!("Runtime error: {e}");
     }
 }

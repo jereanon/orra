@@ -73,7 +73,7 @@ impl McpClient {
             .await?;
 
         let init_result: InitializeResult = serde_json::from_value(result)
-            .map_err(|e| McpError::UnexpectedResponse(format!("parse init result: {}", e)))?;
+            .map_err(|e| McpError::UnexpectedResponse(format!("parse init result: {e}")))?;
 
         // Send initialized notification (no response expected, but we use our transport)
         // In a full implementation this would be a notification (no id), but
@@ -87,7 +87,7 @@ impl McpClient {
         let result = self.call("tools/list", None).await?;
 
         let list_result: ListToolsResult = serde_json::from_value(result)
-            .map_err(|e| McpError::UnexpectedResponse(format!("parse tools list: {}", e)))?;
+            .map_err(|e| McpError::UnexpectedResponse(format!("parse tools list: {e}")))?;
 
         Ok(list_result.tools)
     }
@@ -108,7 +108,7 @@ impl McpClient {
             .await?;
 
         let tool_result: McpToolResult = serde_json::from_value(result)
-            .map_err(|e| McpError::UnexpectedResponse(format!("parse tool result: {}", e)))?;
+            .map_err(|e| McpError::UnexpectedResponse(format!("parse tool result: {e}")))?;
 
         Ok(tool_result)
     }
@@ -134,16 +134,19 @@ mod tests {
             let req = req_rx.recv().await.unwrap();
             assert_eq!(req.method, "initialize");
 
-            resp_tx.send(JsonRpcResponse {
-                jsonrpc: "2.0".into(),
-                id: req.id,
-                result: Some(serde_json::json!({
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {"tools": {}},
-                    "serverInfo": {"name": "test-server", "version": "1.0"}
-                })),
-                error: None,
-            }).await.unwrap();
+            resp_tx
+                .send(JsonRpcResponse {
+                    jsonrpc: "2.0".into(),
+                    id: req.id,
+                    result: Some(serde_json::json!({
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {"tools": {}},
+                        "serverInfo": {"name": "test-server", "version": "1.0"}
+                    })),
+                    error: None,
+                })
+                .await
+                .unwrap();
         });
 
         let result = client.initialize().await.unwrap();
@@ -202,15 +205,18 @@ mod tests {
             assert_eq!(params["name"], "search");
             assert_eq!(params["arguments"]["q"], "rust");
 
-            resp_tx.send(JsonRpcResponse {
-                jsonrpc: "2.0".into(),
-                id: req.id,
-                result: Some(serde_json::json!({
-                    "content": [{"type": "text", "text": "Found 42 results"}],
-                    "isError": false
-                })),
-                error: None,
-            }).await.unwrap();
+            resp_tx
+                .send(JsonRpcResponse {
+                    jsonrpc: "2.0".into(),
+                    id: req.id,
+                    result: Some(serde_json::json!({
+                        "content": [{"type": "text", "text": "Found 42 results"}],
+                        "isError": false
+                    })),
+                    error: None,
+                })
+                .await
+                .unwrap();
         });
 
         let result = client
@@ -230,16 +236,19 @@ mod tests {
 
         let server_task = tokio::spawn(async move {
             let req = req_rx.recv().await.unwrap();
-            resp_tx.send(JsonRpcResponse {
-                jsonrpc: "2.0".into(),
-                id: req.id,
-                result: None,
-                error: Some(JsonRpcError {
-                    code: -32601,
-                    message: "Method not found".into(),
-                    data: None,
-                }),
-            }).await.unwrap();
+            resp_tx
+                .send(JsonRpcResponse {
+                    jsonrpc: "2.0".into(),
+                    id: req.id,
+                    result: None,
+                    error: Some(JsonRpcError {
+                        code: -32601,
+                        message: "Method not found".into(),
+                        data: None,
+                    }),
+                })
+                .await
+                .unwrap();
         });
 
         let err = client.call_tool("nope", None).await.unwrap_err();
@@ -248,7 +257,7 @@ mod tests {
                 assert_eq!(code, -32601);
                 assert_eq!(message, "Method not found");
             }
-            other => panic!("expected Server error, got {:?}", other),
+            other => panic!("expected Server error, got {other:?}"),
         }
         server_task.await.unwrap();
     }
@@ -262,16 +271,19 @@ mod tests {
             // 1. Initialize
             let req = req_rx.recv().await.unwrap();
             assert_eq!(req.method, "initialize");
-            resp_tx.send(JsonRpcResponse {
-                jsonrpc: "2.0".into(),
-                id: req.id,
-                result: Some(serde_json::json!({
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {"tools": {}},
-                    "serverInfo": {"name": "test", "version": "1.0"}
-                })),
-                error: None,
-            }).await.unwrap();
+            resp_tx
+                .send(JsonRpcResponse {
+                    jsonrpc: "2.0".into(),
+                    id: req.id,
+                    result: Some(serde_json::json!({
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {"tools": {}},
+                        "serverInfo": {"name": "test", "version": "1.0"}
+                    })),
+                    error: None,
+                })
+                .await
+                .unwrap();
 
             // 2. List tools
             let req = req_rx.recv().await.unwrap();
@@ -294,15 +306,18 @@ mod tests {
             assert_eq!(req.method, "tools/call");
             let params = req.params.unwrap();
             let input_text = params["arguments"]["text"].as_str().unwrap().to_string();
-            resp_tx.send(JsonRpcResponse {
-                jsonrpc: "2.0".into(),
-                id: req.id,
-                result: Some(serde_json::json!({
-                    "content": [{"type": "text", "text": input_text}],
-                    "isError": false
-                })),
-                error: None,
-            }).await.unwrap();
+            resp_tx
+                .send(JsonRpcResponse {
+                    jsonrpc: "2.0".into(),
+                    id: req.id,
+                    result: Some(serde_json::json!({
+                        "content": [{"type": "text", "text": input_text}],
+                        "isError": false
+                    })),
+                    error: None,
+                })
+                .await
+                .unwrap();
         });
 
         // Run client flow
@@ -313,7 +328,10 @@ mod tests {
         assert_eq!(tools.len(), 1);
         assert_eq!(tools[0].name, "echo");
 
-        let result = client.call_tool("echo", Some(serde_json::json!({"text": "hello"}))).await.unwrap();
+        let result = client
+            .call_tool("echo", Some(serde_json::json!({"text": "hello"})))
+            .await
+            .unwrap();
         assert_eq!(result.content[0].as_text(), Some("hello"));
 
         server_task.await.unwrap();

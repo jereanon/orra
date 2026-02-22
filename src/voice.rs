@@ -176,8 +176,8 @@ impl SpeechToText for WhisperSTT {
             .part(
                 "file",
                 reqwest::multipart::Part::bytes(audio.to_vec())
-                    .file_name(format!("audio.{}", format))
-                    .mime_str(&format!("audio/{}", format))
+                    .file_name(format!("audio.{format}"))
+                    .mime_str(&format!("audio/{format}"))
                     .map_err(|e| VoiceError::Request(e.to_string()))?,
             );
 
@@ -215,10 +215,7 @@ impl SpeechToText for WhisperSTT {
             .await
             .map_err(|e| VoiceError::Parse(e.to_string()))?;
 
-        let text = data["text"]
-            .as_str()
-            .unwrap_or_default()
-            .to_string();
+        let text = data["text"].as_str().unwrap_or_default().to_string();
 
         let language = data["language"].as_str().map(String::from);
         let duration_secs = data["duration"].as_f64();

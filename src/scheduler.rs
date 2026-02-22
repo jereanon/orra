@@ -11,14 +11,15 @@ use tokio::sync::RwLock;
 /// Represents a parsed cron schedule.
 ///
 /// Supports standard 5-field cron syntax:
-///   minute hour day-of-month month day-of-week
+///   `minute hour day-of-month month day-of-week`
 ///
 /// Special values:
-///   * = any value
-///   */N = every N units
-///   N = specific value
-///   N,M = multiple values
-///   N-M = range
+///
+/// - `*` = any value
+/// - `*/N` = every N units
+/// - `N` = specific value
+/// - `N,M` = multiple values
+/// - `N-M` = range
 #[derive(Debug, Clone)]
 pub struct CronSchedule {
     minutes: FieldSpec,
@@ -53,7 +54,7 @@ impl FieldSpec {
         if let Some(step) = field.strip_prefix("*/") {
             let n: u32 = step
                 .parse()
-                .map_err(|_| SchedulerError::InvalidCron(format!("bad step: {}", field)))?;
+                .map_err(|_| SchedulerError::InvalidCron(format!("bad step: {field}")))?;
             if n == 0 {
                 return Err(SchedulerError::InvalidCron("step cannot be 0".into()));
             }
@@ -67,14 +68,13 @@ impl FieldSpec {
             if let Some((start, end)) = part.split_once('-') {
                 let s: u32 = start
                     .parse()
-                    .map_err(|_| SchedulerError::InvalidCron(format!("bad range start: {}", part)))?;
+                    .map_err(|_| SchedulerError::InvalidCron(format!("bad range start: {part}")))?;
                 let e: u32 = end
                     .parse()
-                    .map_err(|_| SchedulerError::InvalidCron(format!("bad range end: {}", part)))?;
+                    .map_err(|_| SchedulerError::InvalidCron(format!("bad range end: {part}")))?;
                 if s > e {
                     return Err(SchedulerError::InvalidCron(format!(
-                        "range start > end: {}",
-                        part
+                        "range start > end: {part}"
                     )));
                 }
                 for v in s..=e {
@@ -83,7 +83,7 @@ impl FieldSpec {
             } else {
                 let v: u32 = part
                     .parse()
-                    .map_err(|_| SchedulerError::InvalidCron(format!("bad value: {}", part)))?;
+                    .map_err(|_| SchedulerError::InvalidCron(format!("bad value: {part}")))?;
                 values.push(v);
             }
         }
@@ -97,7 +97,7 @@ impl FieldSpec {
 impl CronSchedule {
     /// Parse a standard 5-field cron expression.
     pub fn parse(expr: &str) -> Result<Self, SchedulerError> {
-        let fields: Vec<&str> = expr.trim().split_whitespace().collect();
+        let fields: Vec<&str> = expr.split_whitespace().collect();
         if fields.len() != 5 {
             return Err(SchedulerError::InvalidCron(format!(
                 "expected 5 fields, got {}",
@@ -280,7 +280,7 @@ impl Scheduler {
                             if job.schedule.matches(&now) {
                                 job.last_run = Some(now);
                                 job.run_count += 1;
-                                let _ = (job.callback)();
+                                drop((job.callback)());
                             }
                         }
                     }
@@ -312,7 +312,7 @@ impl Scheduler {
             if job.schedule.matches(now) {
                 job.last_run = Some(*now);
                 job.run_count += 1;
-                let _ = (job.callback)();
+                drop((job.callback)());
             }
         }
     }
@@ -471,7 +471,10 @@ mod tests {
         let scheduler = Scheduler::new();
 
         let cb: JobCallback = Arc::new(|| tokio::spawn(async {}));
-        let id = scheduler.add_job("test job", "* * * * *", cb).await.unwrap();
+        let id = scheduler
+            .add_job("test job", "* * * * *", cb)
+            .await
+            .unwrap();
 
         let jobs = scheduler.list_jobs().await;
         assert_eq!(jobs.len(), 1);
@@ -515,7 +518,10 @@ mod tests {
             })
         });
 
-        scheduler.add_job("counter", "30 10 * * *", cb).await.unwrap();
+        scheduler
+            .add_job("counter", "30 10 * * *", cb)
+            .await
+            .unwrap();
 
         // This time matches: 10:30
         let matching = Utc.with_ymd_and_hms(2025, 6, 15, 10, 30, 0).unwrap();
@@ -546,7 +552,10 @@ mod tests {
             })
         });
 
-        let id = scheduler.add_job("disabled", "* * * * *", cb).await.unwrap();
+        let id = scheduler
+            .add_job("disabled", "* * * * *", cb)
+            .await
+            .unwrap();
         scheduler.set_enabled(&id, false).await;
 
         let now = Utc::now();

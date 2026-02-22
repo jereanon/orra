@@ -267,9 +267,7 @@ fn extract_chunk(content: &str, query_terms: &[String], max_chars: usize) -> Str
     };
 
     let end = if end < content.len() {
-        content[..end]
-            .rfind(char::is_whitespace)
-            .unwrap_or(end)
+        content[..end].rfind(char::is_whitespace).unwrap_or(end)
     } else {
         end
     };
@@ -328,10 +326,7 @@ impl Tool for SearchDocumentsTool {
             .and_then(|v| v.as_str())
             .ok_or_else(|| ToolError::InvalidInput("missing 'query'".into()))?;
 
-        let limit = input
-            .get("limit")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(5) as usize;
+        let limit = input.get("limit").and_then(|v| v.as_u64()).unwrap_or(5) as usize;
 
         let results = self
             .store
@@ -340,7 +335,7 @@ impl Tool for SearchDocumentsTool {
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
 
         if results.is_empty() {
-            return Ok(format!("No documents found matching '{}'.", query));
+            return Ok(format!("No documents found matching '{query}'."));
         }
 
         let mut lines = Vec::new();
@@ -399,19 +394,24 @@ impl Tool for ReadDocumentTool {
             .get(id)
             .await
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?
-            .ok_or_else(|| ToolError::ExecutionFailed(format!("document '{}' not found", id)))?;
+            .ok_or_else(|| ToolError::ExecutionFailed(format!("document '{id}' not found")))?;
 
         let mut meta_lines: Vec<String> = doc
             .metadata
             .iter()
-            .map(|(k, v)| format!("{}: {}", k, v))
+            .map(|(k, v)| format!("{k}: {v}"))
             .collect();
         meta_lines.sort();
 
         let header = if meta_lines.is_empty() {
             format!("# {}\n(id: {})", doc.title, doc.id)
         } else {
-            format!("# {}\n(id: {})\n{}", doc.title, doc.id, meta_lines.join("\n"))
+            format!(
+                "# {}\n(id: {})\n{}",
+                doc.title,
+                doc.id,
+                meta_lines.join("\n")
+            )
         };
 
         Ok(format!("{}\n\n{}", header, doc.content))
@@ -433,7 +433,8 @@ impl Tool for ListDocumentsTool {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "list_documents".into(),
-            description: "List all available documents with their IDs, titles, and metadata.".into(),
+            description: "List all available documents with their IDs, titles, and metadata."
+                .into(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {}
@@ -457,7 +458,8 @@ impl Tool for ListDocumentsTool {
             let meta = if s.metadata.is_empty() {
                 String::new()
             } else {
-                let pairs: Vec<String> = s.metadata.iter().map(|(k, v)| format!("{}={}", k, v)).collect();
+                let pairs: Vec<String> =
+                    s.metadata.iter().map(|(k, v)| format!("{k}={v}")).collect();
                 format!(" ({})", pairs.join(", "))
             };
             lines.push(format!("- [{}] {}{}", s.id, s.title, meta));

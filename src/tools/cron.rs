@@ -116,8 +116,7 @@ impl Tool for CronTool {
             "resume" => self.resume_job(&input).await,
             "delete" => self.delete_job(&input).await,
             _ => Err(ToolError::InvalidInput(format!(
-                "unknown action: '{}'. Use: create, list, get, pause, resume, delete",
-                action
+                "unknown action: '{action}'. Use: create, list, get, pause, resume, delete"
             ))),
         }
     }
@@ -175,8 +174,8 @@ impl CronTool {
                 .unwrap_or_else(|| "none".into());
             let schedule_desc = match &job.schedule {
                 CronScheduleType::At { datetime } => format!("at {}", datetime.to_rfc3339()),
-                CronScheduleType::Every { interval_ms } => format!("every {}ms", interval_ms),
-                CronScheduleType::Cron { expression } => format!("cron: {}", expression),
+                CronScheduleType::Every { interval_ms } => format!("every {interval_ms}ms"),
+                CronScheduleType::Cron { expression } => format!("cron: {expression}"),
             };
             lines.push(format!(
                 "- {} (id: {}) [{:?}] schedule: {} | next: {} | runs: {}",
@@ -205,7 +204,7 @@ impl CronTool {
                     .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
                 Ok(json)
             }
-            None => Ok(format!("Job not found: {}", id)),
+            None => Ok(format!("Job not found: {id}")),
         }
     }
 
@@ -222,9 +221,9 @@ impl CronTool {
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
 
         if paused {
-            Ok(format!("Paused job {}.", id))
+            Ok(format!("Paused job {id}."))
         } else {
-            Ok(format!("Job not found: {}", id))
+            Ok(format!("Job not found: {id}"))
         }
     }
 
@@ -241,9 +240,9 @@ impl CronTool {
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
 
         if resumed {
-            Ok(format!("Resumed job {}.", id))
+            Ok(format!("Resumed job {id}."))
         } else {
-            Ok(format!("Job not found: {}", id))
+            Ok(format!("Job not found: {id}"))
         }
     }
 
@@ -260,9 +259,9 @@ impl CronTool {
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
 
         if deleted {
-            Ok(format!("Deleted job {}.", id))
+            Ok(format!("Deleted job {id}."))
         } else {
-            Ok(format!("Job not found: {}", id))
+            Ok(format!("Job not found: {id}"))
         }
     }
 }
@@ -290,7 +289,7 @@ fn parse_schedule(input: &serde_json::Value) -> Result<CronScheduleType, ToolErr
                     ToolError::InvalidInput("missing 'schedule.datetime' for 'at' type".into())
                 })?;
             let dt: chrono::DateTime<chrono::Utc> = dt_str.parse().map_err(|e| {
-                ToolError::InvalidInput(format!("invalid datetime '{}': {}", dt_str, e))
+                ToolError::InvalidInput(format!("invalid datetime '{dt_str}': {e}"))
             })?;
             Ok(CronScheduleType::At { datetime: dt })
         }
@@ -315,21 +314,18 @@ fn parse_schedule(input: &serde_json::Value) -> Result<CronScheduleType, ToolErr
                 .get("expression")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| {
-                    ToolError::InvalidInput(
-                        "missing 'schedule.expression' for 'cron' type".into(),
-                    )
+                    ToolError::InvalidInput("missing 'schedule.expression' for 'cron' type".into())
                 })?;
             // Validate the expression
             crate::scheduler::CronSchedule::parse(expr).map_err(|e| {
-                ToolError::InvalidInput(format!("invalid cron expression '{}': {}", expr, e))
+                ToolError::InvalidInput(format!("invalid cron expression '{expr}': {e}"))
             })?;
             Ok(CronScheduleType::Cron {
                 expression: expr.into(),
             })
         }
         _ => Err(ToolError::InvalidInput(format!(
-            "unknown schedule type '{}'. Use: at, every, cron",
-            stype
+            "unknown schedule type '{stype}'. Use: at, every, cron"
         ))),
     }
 }
@@ -350,9 +346,7 @@ fn parse_payload(input: &serde_json::Value) -> Result<CronPayload, ToolError> {
                 .get("prompt")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| {
-                    ToolError::InvalidInput(
-                        "missing 'payload.prompt' for 'agent_turn' type".into(),
-                    )
+                    ToolError::InvalidInput("missing 'payload.prompt' for 'agent_turn' type".into())
                 })?;
             Ok(CronPayload::AgentTurn {
                 prompt: prompt.into(),
@@ -372,8 +366,7 @@ fn parse_payload(input: &serde_json::Value) -> Result<CronPayload, ToolError> {
             })
         }
         _ => Err(ToolError::InvalidInput(format!(
-            "unknown payload type '{}'. Use: agent_turn, system_event",
-            ptype
+            "unknown payload type '{ptype}'. Use: agent_turn, system_event"
         ))),
     }
 }

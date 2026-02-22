@@ -81,10 +81,7 @@ async fn ui_approval(
     // Block until the user responds
     match response_rx.await {
         Ok(true) => Ok(()),
-        Ok(false) => Err(format!(
-            "Tool call '{}' was denied by the user.",
-            call.name
-        )),
+        Ok(false) => Err(format!("Tool call '{}' was denied by the user.", call.name)),
         Err(_) => {
             // Sender dropped — connection lost, auto-approve to avoid
             // permanently blocking
@@ -131,12 +128,12 @@ async fn discord_approval(
     let send_resp = discord
         .request(
             reqwest::Method::POST,
-            &format!("channels/{}/messages", channel_id),
+            &format!("channels/{channel_id}/messages"),
         )
         .json(&serde_json::json!({ "content": prompt_content }))
         .send()
         .await
-        .map_err(|e| format!("Failed to send approval prompt: {}", e))?;
+        .map_err(|e| format!("Failed to send approval prompt: {e}"))?;
 
     if !send_resp.status().is_success() {
         // Can't send to Discord, auto-approve
@@ -147,7 +144,7 @@ async fn discord_approval(
     let sent_msg: serde_json::Value = send_resp
         .json()
         .await
-        .map_err(|e| format!("Failed to parse sent message: {}", e))?;
+        .map_err(|e| format!("Failed to parse sent message: {e}"))?;
     let prompt_msg_id = sent_msg["id"]
         .as_str()
         .ok_or_else(|| "Missing message ID in response".to_string())?
@@ -172,7 +169,7 @@ async fn discord_approval(
         let msgs_resp = discord
             .request(
                 reqwest::Method::GET,
-                &format!("channels/{}/messages", channel_id),
+                &format!("channels/{channel_id}/messages"),
             )
             .query(&[("after", &prompt_msg_id), ("limit", &"10".to_string())])
             .send()
@@ -199,20 +196,13 @@ async fn discord_approval(
                 continue;
             }
 
-            let content = msg["content"]
-                .as_str()
-                .unwrap_or("")
-                .trim()
-                .to_lowercase();
+            let content = msg["content"].as_str().unwrap_or("").trim().to_lowercase();
 
             if content == "yes" || content == "y" || content == "approve" {
                 return Ok(());
             }
             if content == "no" || content == "n" || content == "deny" {
-                return Err(format!(
-                    "Tool call '{}' was denied by the user.",
-                    call.name
-                ));
+                return Err(format!("Tool call '{}' was denied by the user.", call.name));
             }
         }
     }
@@ -229,7 +219,11 @@ impl Hook for ApprovalHook {
         *self.chaos_mode.write().await = chaos;
     }
 
-    async fn before_tool_call(&self, namespace: &Namespace, call: &mut ToolCall) -> Result<(), String> {
+    async fn before_tool_call(
+        &self,
+        #[cfg_attr(not(feature = "discord"), allow(unused_variables))] namespace: &Namespace,
+        call: &mut ToolCall,
+    ) -> Result<(), String> {
         // If chaos mode is enabled, auto-approve everything
         if *self.chaos_mode.read().await {
             return Ok(());

@@ -8,9 +8,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tokio::sync::RwLock;
 
-use crate::provider::{
-    CompletionRequest, CompletionResponse, Provider, ProviderError,
-};
+use crate::provider::{CompletionRequest, CompletionResponse, Provider, ProviderError};
 
 // ---------------------------------------------------------------------------
 // Placeholder provider (returns error until configured)
@@ -128,7 +126,7 @@ mod tests {
             ProviderError::Auth(msg) => {
                 assert!(msg.contains("not configured"));
             }
-            _ => panic!("expected Auth error, got {:?}", err),
+            _ => panic!("expected Auth error, got {err:?}"),
         }
     }
 

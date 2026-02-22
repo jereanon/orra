@@ -199,7 +199,9 @@ impl DiscordChannel {
         let hello_msg = read
             .next()
             .await
-            .ok_or_else(|| DiscordChannelError::Connection("connection closed before Hello".into()))?
+            .ok_or_else(|| {
+                DiscordChannelError::Connection("connection closed before Hello".into())
+            })?
             .map_err(|e| DiscordChannelError::Connection(e.to_string()))?;
 
         let hello: GatewayEvent = parse_ws_message(&hello_msg)?;
@@ -245,7 +247,9 @@ impl DiscordChannel {
         let ready_msg = read
             .next()
             .await
-            .ok_or_else(|| DiscordChannelError::Connection("connection closed before Ready".into()))?
+            .ok_or_else(|| {
+                DiscordChannelError::Connection("connection closed before Ready".into())
+            })?
             .map_err(|e| DiscordChannelError::Connection(e.to_string()))?;
 
         let ready_event: GatewayEvent = parse_ws_message(&ready_msg)?;
@@ -257,7 +261,7 @@ impl DiscordChannel {
         }
 
         let ready: ReadyPayload = serde_json::from_value(ready_event.d)
-            .map_err(|e| DiscordChannelError::Protocol(format!("parse READY: {}", e)))?;
+            .map_err(|e| DiscordChannelError::Protocol(format!("parse READY: {e}")))?;
 
         let bot_user_id = ready.user.id.clone();
         *self.bot_id.lock().await = Some(bot_user_id.clone());
@@ -358,7 +362,9 @@ impl DiscordChannel {
                                 MessageFilter::DirectMessagesFrom(users) => {
                                     // Must be a DM (no guild_id) from an allowed user
                                     mc.guild_id.is_none()
-                                        && users.iter().any(|u| u.eq_ignore_ascii_case(&mc.author.username))
+                                        && users
+                                            .iter()
+                                            .any(|u| u.eq_ignore_ascii_case(&mc.author.username))
                                 }
                             };
 
@@ -384,18 +390,9 @@ impl DiscordChannel {
                                 .child(&mc.author.id);
 
                             let mut metadata = HashMap::new();
-                            metadata.insert(
-                                "channel_id".into(),
-                                serde_json::json!(mc.channel_id),
-                            );
-                            metadata.insert(
-                                "message_id".into(),
-                                serde_json::json!(mc.id),
-                            );
-                            metadata.insert(
-                                "author_id".into(),
-                                serde_json::json!(mc.author.id),
-                            );
+                            metadata.insert("channel_id".into(), serde_json::json!(mc.channel_id));
+                            metadata.insert("message_id".into(), serde_json::json!(mc.id));
+                            metadata.insert("author_id".into(), serde_json::json!(mc.author.id));
                             metadata.insert(
                                 "author_username".into(),
                                 serde_json::json!(mc.author.username),
@@ -457,7 +454,7 @@ impl Channel for DiscordChannel {
         let _ = discord
             .request(
                 reqwest::Method::POST,
-                &format!("channels/{}/typing", channel_id),
+                &format!("channels/{channel_id}/typing"),
             )
             .send()
             .await;
@@ -479,7 +476,7 @@ impl Channel for DiscordChannel {
                         let _ = discord
                             .request(
                                 reqwest::Method::POST,
-                                &format!("channels/{}/typing", channel_id),
+                                &format!("channels/{channel_id}/typing"),
                             )
                             .send()
                             .await;
@@ -507,7 +504,7 @@ impl Channel for DiscordChannel {
             .discord
             .request(
                 reqwest::Method::POST,
-                &format!("channels/{}/messages", channel_id),
+                &format!("channels/{channel_id}/messages"),
             )
             .json(&serde_json::json!({ "content": response.message.content }))
             .send()
@@ -517,10 +514,7 @@ impl Channel for DiscordChannel {
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            return Err(ChannelError::Send(format!(
-                "Discord API {}: {}",
-                status, body
-            )));
+            return Err(ChannelError::Send(format!("Discord API {status}: {body}")));
         }
 
         Ok(())
@@ -540,7 +534,7 @@ impl Channel for DiscordChannel {
             .discord
             .request(
                 reqwest::Method::POST,
-                &format!("channels/{}/messages", channel_id),
+                &format!("channels/{channel_id}/messages"),
             )
             .json(&serde_json::json!({ "content": error_msg }))
             .send()
@@ -550,10 +544,7 @@ impl Channel for DiscordChannel {
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            return Err(ChannelError::Send(format!(
-                "Discord API {}: {}",
-                status, body
-            )));
+            return Err(ChannelError::Send(format!("Discord API {status}: {body}")));
         }
 
         Ok(())
@@ -567,17 +558,21 @@ impl Channel for DiscordChannel {
 fn parse_ws_message(msg: &tungstenite::Message) -> Result<GatewayEvent, DiscordChannelError> {
     match msg {
         tungstenite::Message::Text(text) => serde_json::from_str(text)
-            .map_err(|e| DiscordChannelError::Protocol(format!("parse gateway event: {}", e))),
-        tungstenite::Message::Close(_) => Err(DiscordChannelError::Connection("connection closed".into())),
-        _ => Err(DiscordChannelError::Protocol("unexpected message type".into())),
+            .map_err(|e| DiscordChannelError::Protocol(format!("parse gateway event: {e}"))),
+        tungstenite::Message::Close(_) => {
+            Err(DiscordChannelError::Connection("connection closed".into()))
+        }
+        _ => Err(DiscordChannelError::Protocol(
+            "unexpected message type".into(),
+        )),
     }
 }
 
 /// Strip `<@bot_id>` mentions from message content.
 fn strip_mention(content: &str, bot_id: &str) -> String {
     content
-        .replace(&format!("<@{}>", bot_id), "")
-        .replace(&format!("<@!{}>", bot_id), "")
+        .replace(&format!("<@{bot_id}>"), "")
+        .replace(&format!("<@!{bot_id}>"), "")
 }
 
 // Re-export detect_agent_mention from the agent module for backward compat
@@ -774,8 +769,8 @@ mod tests {
     #[test]
     fn config_with_agent_names() {
         let dc = DiscordConfig::new("tok");
-        let config = DiscordChannelConfig::new(dc)
-            .with_agent_names(vec!["Atlas".into(), "CodeBot".into()]);
+        let config =
+            DiscordChannelConfig::new(dc).with_agent_names(vec!["Atlas".into(), "CodeBot".into()]);
         assert_eq!(config.agent_names.len(), 2);
     }
 }

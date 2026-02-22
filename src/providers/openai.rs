@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::message::{Message, Role, ToolCall};
 use crate::provider::{
-    CompletionRequest, CompletionResponse, FinishReason, Provider, ProviderError,
-    StreamEvent, StreamingProvider, Usage,
+    CompletionRequest, CompletionResponse, FinishReason, Provider, ProviderError, StreamEvent,
+    StreamingProvider, Usage,
 };
 use crate::tool::ToolDefinition;
 
@@ -81,8 +81,7 @@ impl OpenAIProvider {
                             r#type: "function".into(),
                             function: ChatFunctionCall {
                                 name: tc.name.clone(),
-                                arguments: serde_json::to_string(&tc.arguments)
-                                    .unwrap_or_default(),
+                                arguments: serde_json::to_string(&tc.arguments).unwrap_or_default(),
                             },
                         })
                         .collect();
@@ -188,7 +187,7 @@ impl OpenAIProvider {
             400 if error_msg.contains("context") || error_msg.contains("token") => {
                 ProviderError::ContextLengthExceeded(error_msg)
             }
-            _ => ProviderError::Other(format!("HTTP {}: {}", status, error_msg)),
+            _ => ProviderError::Other(format!("HTTP {status}: {error_msg}")),
         }
     }
 }
@@ -209,7 +208,7 @@ impl Provider for OpenAIProvider {
             .json(&api_request)
             .send()
             .await
-            .map_err(|e| ProviderError::Other(format!("request failed: {}", e)))?;
+            .map_err(|e| ProviderError::Other(format!("request failed: {e}")))?;
 
         let status = http_response.status();
 
@@ -224,7 +223,7 @@ impl Provider for OpenAIProvider {
         let api_response: ChatResponse = http_response
             .json()
             .await
-            .map_err(|e| ProviderError::Other(format!("failed to parse response: {}", e)))?;
+            .map_err(|e| ProviderError::Other(format!("failed to parse response: {e}")))?;
 
         Ok(self.parse_response(api_response))
     }
@@ -249,7 +248,7 @@ impl StreamingProvider for OpenAIProvider {
             .json(&api_request)
             .send()
             .await
-            .map_err(|e| ProviderError::Other(format!("request failed: {}", e)))?;
+            .map_err(|e| ProviderError::Other(format!("request failed: {e}")))?;
 
         let status = http_response.status();
         if !status.is_success() {
@@ -344,9 +343,8 @@ impl StreamingProvider for OpenAIProvider {
                                         }
 
                                         // Tool calls
-                                        if let Some(tool_calls) = delta
-                                            .get("tool_calls")
-                                            .and_then(|v| v.as_array())
+                                        if let Some(tool_calls) =
+                                            delta.get("tool_calls").and_then(|v| v.as_array())
                                         {
                                             for tc in tool_calls {
                                                 let id = tc
@@ -371,13 +369,11 @@ impl StreamingProvider for OpenAIProvider {
                                                     {
                                                         if !args.is_empty() {
                                                             let _ = tx
-                                                                .send(
-                                                                    StreamEvent::ToolCallDelta {
-                                                                        id: id.clone(),
-                                                                        arguments_delta: args
-                                                                            .to_string(),
-                                                                    },
-                                                                )
+                                                                .send(StreamEvent::ToolCallDelta {
+                                                                    id: id.clone(),
+                                                                    arguments_delta: args
+                                                                        .to_string(),
+                                                                })
                                                                 .await;
                                                         }
                                                     }
@@ -510,10 +506,7 @@ mod tests {
     fn builds_basic_request() {
         let provider = OpenAIProvider::new("key", "gpt-4o");
         let request = CompletionRequest {
-            messages: vec![
-                Message::system("Be helpful."),
-                Message::user("Hello"),
-            ],
+            messages: vec![Message::system("Be helpful."), Message::user("Hello")],
             tools: vec![],
             max_tokens: Some(1024),
             temperature: Some(0.5),
@@ -662,12 +655,13 @@ mod tests {
 
     #[test]
     fn error_parsing() {
-        let auth_err =
-            OpenAIProvider::parse_error(reqwest::StatusCode::UNAUTHORIZED, "{\"error\":{\"message\":\"invalid key\"}}");
+        let auth_err = OpenAIProvider::parse_error(
+            reqwest::StatusCode::UNAUTHORIZED,
+            "{\"error\":{\"message\":\"invalid key\"}}",
+        );
         assert!(matches!(auth_err, ProviderError::Auth(_)));
 
-        let rate_err =
-            OpenAIProvider::parse_error(reqwest::StatusCode::TOO_MANY_REQUESTS, "{}");
+        let rate_err = OpenAIProvider::parse_error(reqwest::StatusCode::TOO_MANY_REQUESTS, "{}");
         assert!(matches!(rate_err, ProviderError::RateLimited { .. }));
 
         let ctx_err = OpenAIProvider::parse_error(

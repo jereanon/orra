@@ -67,27 +67,23 @@ impl Tool for WebSearchTool {
             .get("https://api.search.brave.com/res/v1/web/search")
             .header("X-Subscription-Token", &self.api_key)
             .header("Accept", "application/json")
-            .query(&[
-                ("q", query),
-                ("count", &count.to_string()),
-            ])
+            .query(&[("q", query), ("count", &count.to_string())])
             .send()
             .await
-            .map_err(|e| ToolError::ExecutionFailed(format!("search error: {}", e)))?;
+            .map_err(|e| ToolError::ExecutionFailed(format!("search error: {e}")))?;
 
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
             return Err(ToolError::ExecutionFailed(format!(
-                "Brave Search API {}: {}",
-                status, body
+                "Brave Search API {status}: {body}"
             )));
         }
 
         let search_result: BraveSearchResponse = resp
             .json()
             .await
-            .map_err(|e| ToolError::ExecutionFailed(format!("parse error: {}", e)))?;
+            .map_err(|e| ToolError::ExecutionFailed(format!("parse error: {e}")))?;
 
         let results = search_result
             .web
@@ -96,7 +92,7 @@ impl Tool for WebSearchTool {
             .unwrap_or(&[]);
 
         if results.is_empty() {
-            return Ok(format!("No results found for: {}", query));
+            return Ok(format!("No results found for: {query}"));
         }
 
         let mut lines = Vec::new();
@@ -106,10 +102,7 @@ impl Tool for WebSearchTool {
                 i + 1,
                 result.title,
                 result.url,
-                result
-                    .description
-                    .as_deref()
-                    .unwrap_or("(no description)")
+                result.description.as_deref().unwrap_or("(no description)")
             ));
         }
 

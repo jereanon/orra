@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::message::{Message, Role, ToolCall};
 use crate::provider::{
-    CompletionRequest, CompletionResponse, FinishReason, Provider, ProviderError,
-    StreamEvent, StreamingProvider, Usage,
+    CompletionRequest, CompletionResponse, FinishReason, Provider, ProviderError, StreamEvent,
+    StreamingProvider, Usage,
 };
 use crate::tool::ToolDefinition;
 
@@ -125,7 +125,13 @@ impl ClaudeProvider {
         let tools: Option<Vec<ApiTool>> = if request.tools.is_empty() {
             None
         } else {
-            Some(request.tools.iter().map(|t| ApiTool::from(t.clone())).collect())
+            Some(
+                request
+                    .tools
+                    .iter()
+                    .map(|t| ApiTool::from(t.clone()))
+                    .collect(),
+            )
         };
 
         ApiRequest {
@@ -219,7 +225,8 @@ impl Provider for ClaudeProvider {
             .post(&self.api_url)
             .header("anthropic-version", ANTHROPIC_VERSION)
             .header("content-type", "application/json");
-        let http_response = self.apply_auth(builder)
+        let http_response = self
+            .apply_auth(builder)
             .json(&api_request)
             .send()
             .await
@@ -293,18 +300,29 @@ impl SseParser {
                 match current_event_type.as_str() {
                     "message_start" => {
                         if let Some(usage) = parsed.get("message").and_then(|m| m.get("usage")) {
-                            self.input_tokens = usage.get("input_tokens")
+                            self.input_tokens = usage
+                                .get("input_tokens")
                                 .and_then(|v| v.as_u64())
-                                .unwrap_or(0) as u32;
+                                .unwrap_or(0)
+                                as u32;
                         }
                     }
                     "content_block_start" => {
                         let index = parsed.get("index").and_then(|v| v.as_u64()).unwrap_or(0);
                         if let Some(block) = parsed.get("content_block") {
-                            let block_type = block.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                            let block_type =
+                                block.get("type").and_then(|v| v.as_str()).unwrap_or("");
                             if block_type == "tool_use" {
-                                let id = block.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                let name = block.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                let id = block
+                                    .get("id")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                let name = block
+                                    .get("name")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
                                 self.tool_blocks.insert(index, (id.clone(), name.clone()));
                                 events.push(StreamEvent::ToolCallStart { id, name });
                             }
@@ -313,7 +331,8 @@ impl SseParser {
                     "content_block_delta" => {
                         let index = parsed.get("index").and_then(|v| v.as_u64()).unwrap_or(0);
                         if let Some(delta) = parsed.get("delta") {
-                            let delta_type = delta.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                            let delta_type =
+                                delta.get("type").and_then(|v| v.as_str()).unwrap_or("");
                             match delta_type {
                                 "text_delta" => {
                                     if let Some(text) = delta.get("text").and_then(|v| v.as_str()) {
@@ -321,7 +340,9 @@ impl SseParser {
                                     }
                                 }
                                 "input_json_delta" => {
-                                    if let Some(json_str) = delta.get("partial_json").and_then(|v| v.as_str()) {
+                                    if let Some(json_str) =
+                                        delta.get("partial_json").and_then(|v| v.as_str())
+                                    {
                                         if let Some((id, _)) = self.tool_blocks.get(&index) {
                                             events.push(StreamEvent::ToolCallDelta {
                                                 id: id.clone(),
@@ -335,12 +356,14 @@ impl SseParser {
                         }
                     }
                     "message_delta" => {
-                        let stop_reason = parsed.get("delta")
+                        let stop_reason = parsed
+                            .get("delta")
                             .and_then(|d| d.get("stop_reason"))
                             .and_then(|v| v.as_str())
                             .unwrap_or("end_turn");
 
-                        let output_tokens = parsed.get("usage")
+                        let output_tokens = parsed
+                            .get("usage")
                             .and_then(|u| u.get("output_tokens"))
                             .and_then(|v| v.as_u64())
                             .unwrap_or(0) as u32;
@@ -353,7 +376,10 @@ impl SseParser {
                         };
 
                         events.push(StreamEvent::Done {
-                            usage: Usage { input_tokens: self.input_tokens, output_tokens },
+                            usage: Usage {
+                                input_tokens: self.input_tokens,
+                                output_tokens,
+                            },
                             finish_reason,
                         });
                     }
@@ -380,7 +406,8 @@ impl StreamingProvider for ClaudeProvider {
             .post(&self.api_url)
             .header("anthropic-version", ANTHROPIC_VERSION)
             .header("content-type", "application/json");
-        let http_response = self.apply_auth(builder)
+        let http_response = self
+            .apply_auth(builder)
             .json(&api_request)
             .send()
             .await
@@ -425,7 +452,9 @@ impl StreamingProvider for ClaudeProvider {
                         }
                     }
                     Err(e) => {
-                        let _ = tx.send(StreamEvent::Error(format!("stream error: {e}"))).await;
+                        let _ = tx
+                            .send(StreamEvent::Error(format!("stream error: {e}")))
+                            .await;
                         return;
                     }
                 }
@@ -574,10 +603,7 @@ mod tests {
     fn build_request_extracts_system_prompt() {
         let p = provider();
         let request = CompletionRequest {
-            messages: vec![
-                Message::system("You are helpful."),
-                Message::user("Hi"),
-            ],
+            messages: vec![Message::system("You are helpful."), Message::user("Hi")],
             tools: vec![],
             max_tokens: None,
             temperature: None,
@@ -801,10 +827,7 @@ mod tests {
                 message: "Invalid API key.".into(),
             },
         };
-        let result = ClaudeProvider::parse_api_error(
-            reqwest::StatusCode::UNAUTHORIZED,
-            error,
-        );
+        let result = ClaudeProvider::parse_api_error(reqwest::StatusCode::UNAUTHORIZED, error);
         assert!(matches!(result, ProviderError::Auth(_)));
     }
 
@@ -816,13 +839,12 @@ mod tests {
                 message: "Rate limited".into(),
             },
         };
-        let result = ClaudeProvider::parse_api_error(
-            reqwest::StatusCode::TOO_MANY_REQUESTS,
-            error,
-        );
+        let result = ClaudeProvider::parse_api_error(reqwest::StatusCode::TOO_MANY_REQUESTS, error);
         assert!(matches!(
             result,
-            ProviderError::RateLimited { retry_after_ms: None }
+            ProviderError::RateLimited {
+                retry_after_ms: None
+            }
         ));
     }
 
@@ -834,10 +856,7 @@ mod tests {
                 message: "prompt is too long: 300000 tokens > 200000 token limit".into(),
             },
         };
-        let result = ClaudeProvider::parse_api_error(
-            reqwest::StatusCode::BAD_REQUEST,
-            error,
-        );
+        let result = ClaudeProvider::parse_api_error(reqwest::StatusCode::BAD_REQUEST, error);
         assert!(matches!(result, ProviderError::ContextLengthExceeded(_)));
     }
 
@@ -849,10 +868,8 @@ mod tests {
                 message: "Internal server error".into(),
             },
         };
-        let result = ClaudeProvider::parse_api_error(
-            reqwest::StatusCode::INTERNAL_SERVER_ERROR,
-            error,
-        );
+        let result =
+            ClaudeProvider::parse_api_error(reqwest::StatusCode::INTERNAL_SERVER_ERROR, error);
         assert!(matches!(result, ProviderError::Other(_)));
     }
 
@@ -860,10 +877,7 @@ mod tests {
     fn api_request_serializes_correctly() {
         let p = provider();
         let request = CompletionRequest {
-            messages: vec![
-                Message::system("Be concise."),
-                Message::user("Hello"),
-            ],
+            messages: vec![Message::system("Be concise."), Message::user("Hello")],
             tools: vec![ToolDefinition {
                 name: "echo".into(),
                 description: "Echoes input".into(),
@@ -888,8 +902,8 @@ mod tests {
 
     #[test]
     fn with_api_url() {
-        let p = ClaudeProvider::new("key", "model")
-            .with_api_url("https://custom.api.com/v1/messages");
+        let p =
+            ClaudeProvider::new("key", "model").with_api_url("https://custom.api.com/v1/messages");
         assert_eq!(p.api_url, "https://custom.api.com/v1/messages");
     }
 
@@ -1104,19 +1118,22 @@ data: {\"type\":\"message_stop\"}\n\
 
         match &events[0] {
             StreamEvent::TextDelta(s) => assert_eq!(s, "Hello"),
-            other => panic!("expected TextDelta, got {:?}", other),
+            other => panic!("expected TextDelta, got {other:?}"),
         }
         match &events[1] {
             StreamEvent::TextDelta(s) => assert_eq!(s, " world!"),
-            other => panic!("expected TextDelta, got {:?}", other),
+            other => panic!("expected TextDelta, got {other:?}"),
         }
         match &events[2] {
-            StreamEvent::Done { usage, finish_reason } => {
+            StreamEvent::Done {
+                usage,
+                finish_reason,
+            } => {
                 assert_eq!(usage.input_tokens, 25);
                 assert_eq!(usage.output_tokens, 10);
                 assert_eq!(*finish_reason, FinishReason::Stop);
             }
-            other => panic!("expected Done, got {:?}", other),
+            other => panic!("expected Done, got {other:?}"),
         }
     }
 
@@ -1151,27 +1168,30 @@ data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"},\"usa
 
         match &events[0] {
             StreamEvent::TextDelta(s) => assert_eq!(s, "Searching."),
-            other => panic!("expected TextDelta, got {:?}", other),
+            other => panic!("expected TextDelta, got {other:?}"),
         }
         match &events[1] {
             StreamEvent::ToolCallStart { id, name } => {
                 assert_eq!(id, "toolu_01");
                 assert_eq!(name, "search");
             }
-            other => panic!("expected ToolCallStart, got {:?}", other),
+            other => panic!("expected ToolCallStart, got {other:?}"),
         }
         match &events[2] {
-            StreamEvent::ToolCallDelta { id, arguments_delta } => {
+            StreamEvent::ToolCallDelta {
+                id,
+                arguments_delta,
+            } => {
                 assert_eq!(id, "toolu_01");
                 assert_eq!(arguments_delta, "{\"q\":");
             }
-            other => panic!("expected ToolCallDelta, got {:?}", other),
+            other => panic!("expected ToolCallDelta, got {other:?}"),
         }
         match &events[4] {
             StreamEvent::Done { finish_reason, .. } => {
                 assert_eq!(*finish_reason, FinishReason::ToolUse);
             }
-            other => panic!("expected Done, got {:?}", other),
+            other => panic!("expected Done, got {other:?}"),
         }
     }
 
@@ -1210,7 +1230,7 @@ data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usa
                 assert_eq!(usage.input_tokens, 42); // Preserved from chunk1
                 assert_eq!(usage.output_tokens, 3);
             }
-            other => panic!("expected Done, got {:?}", other),
+            other => panic!("expected Done, got {other:?}"),
         }
     }
 
@@ -1270,7 +1290,10 @@ data: {\"type\":\"message_stop\"}\n\
         while let Some(event) = rx.recv().await {
             match event {
                 StreamEvent::TextDelta(s) => texts.push(s),
-                StreamEvent::Done { usage, finish_reason } => {
+                StreamEvent::Done {
+                    usage,
+                    finish_reason,
+                } => {
                     assert_eq!(usage.input_tokens, 12);
                     assert_eq!(usage.output_tokens, 5);
                     assert_eq!(finish_reason, FinishReason::Stop);

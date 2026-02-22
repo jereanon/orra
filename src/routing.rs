@@ -8,11 +8,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use async_trait::async_trait;
-
-use crate::channels::{Channel, ChannelError, InboundMessage, OutboundError, OutboundMessage};
+use crate::channels::{Channel, InboundMessage, OutboundError, OutboundMessage};
 use crate::context::Tokenizer;
-use crate::namespace::Namespace;
 use crate::runtime::{Runtime, RuntimeError};
 
 // ---------------------------------------------------------------------------
@@ -74,10 +71,7 @@ impl Router {
             RoutingRule::NamespacePrefix => {
                 // Use the first segment of the namespace as the target
                 let key = msg.namespace.key();
-                key.split('/')
-                    .next()
-                    .unwrap_or(source)
-                    .to_string()
+                key.split('/').next().unwrap_or(source).to_string()
             }
             RoutingRule::MetadataKey(key) => msg
                 .metadata
@@ -130,10 +124,7 @@ impl Router {
             let runtime = match runtime {
                 Some(r) => r,
                 None => {
-                    eprintln!(
-                        "router: no runtime found for target '{}', dropping message",
-                        target
-                    );
+                    eprintln!("router: no runtime found for target '{target}', dropping message");
                     continue;
                 }
             };
@@ -165,7 +156,7 @@ impl Router {
                             metadata,
                         };
                         if let Err(e) = ch.send(response).await {
-                            eprintln!("router: send error on channel '{}': {}", source, e);
+                            eprintln!("router: send error on channel '{source}': {e}");
                         }
                     }
                 }
@@ -177,10 +168,7 @@ impl Router {
                             metadata,
                         };
                         if let Err(send_err) = ch.send_error(err).await {
-                            eprintln!(
-                                "router: send_error error on channel '{}': {}",
-                                source, send_err
-                            );
+                            eprintln!("router: send_error error on channel '{source}': {send_err}");
                         }
                     }
                 }
@@ -215,6 +203,7 @@ pub enum RouterError {
 mod tests {
     use super::*;
     use crate::message::Message;
+    use crate::namespace::Namespace;
 
     fn make_inbound(ns: &str) -> InboundMessage {
         InboundMessage {
@@ -271,7 +260,7 @@ mod tests {
 
     #[test]
     fn add_channels() {
-        let mut router = Router::new(RoutingRule::Static("main".into()));
+        let router = Router::new(RoutingRule::Static("main".into()));
         assert!(router.channels.is_empty());
 
         // We can't easily create a real channel in a unit test, but we can

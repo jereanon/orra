@@ -204,7 +204,11 @@ impl MemoryStore for InMemoryMemoryStore {
             })
             .collect();
 
-        scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scored.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         scored.truncate(limit);
 
         Ok(scored)
@@ -245,7 +249,11 @@ impl MemoryStore for InMemoryMemoryStore {
             })
             .collect();
 
-        scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scored.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         scored.truncate(limit);
 
         Ok(scored)
@@ -469,7 +477,10 @@ mod tests {
             .await
             .unwrap();
         store
-            .store(MemoryEntry::new(ns.clone(), "python is a programming language"))
+            .store(MemoryEntry::new(
+                ns.clone(),
+                "python is a programming language",
+            ))
             .await
             .unwrap();
 
@@ -485,31 +496,25 @@ mod tests {
 
         store
             .store(
-                MemoryEntry::new(ns.clone(), "cats are fluffy")
-                    .with_embedding(vec![0.9, 0.1, 0.0]),
+                MemoryEntry::new(ns.clone(), "cats are fluffy").with_embedding(vec![0.9, 0.1, 0.0]),
             )
             .await
             .unwrap();
         store
             .store(
-                MemoryEntry::new(ns.clone(), "dogs are loyal")
-                    .with_embedding(vec![0.1, 0.9, 0.0]),
+                MemoryEntry::new(ns.clone(), "dogs are loyal").with_embedding(vec![0.1, 0.9, 0.0]),
             )
             .await
             .unwrap();
         store
             .store(
-                MemoryEntry::new(ns.clone(), "python is great")
-                    .with_embedding(vec![0.0, 0.0, 1.0]),
+                MemoryEntry::new(ns.clone(), "python is great").with_embedding(vec![0.0, 0.0, 1.0]),
             )
             .await
             .unwrap();
 
         // Query close to "cats"
-        let results = store
-            .search(&ns, &[0.8, 0.2, 0.0], 2)
-            .await
-            .unwrap();
+        let results = store.search(&ns, &[0.8, 0.2, 0.0], 2).await.unwrap();
 
         assert_eq!(results.len(), 2);
         assert!(results[0].entry.content.contains("cats"));
@@ -587,7 +592,7 @@ mod tests {
 
         for i in 0..10 {
             store
-                .store(MemoryEntry::new(ns.clone(), format!("entry {}", i)))
+                .store(MemoryEntry::new(ns.clone(), format!("entry {i}")))
                 .await
                 .unwrap();
         }
@@ -603,11 +608,19 @@ mod tests {
 
         let ns = Namespace::new("test");
         manager
-            .remember(&ns, "the capital of France is Paris", vec!["geography".into()])
+            .remember(
+                &ns,
+                "the capital of France is Paris",
+                vec!["geography".into()],
+            )
             .await
             .unwrap();
         manager
-            .remember(&ns, "rust is a systems programming language", vec!["programming".into()])
+            .remember(
+                &ns,
+                "rust is a systems programming language",
+                vec!["programming".into()],
+            )
             .await
             .unwrap();
 

@@ -43,7 +43,10 @@ pub enum FinishReason {
 
 #[async_trait]
 pub trait Provider: Send + Sync {
-    async fn complete(&self, request: CompletionRequest) -> Result<CompletionResponse, ProviderError>;
+    async fn complete(
+        &self,
+        request: CompletionRequest,
+    ) -> Result<CompletionResponse, ProviderError>;
 }
 
 /// Events emitted by a streaming provider.
@@ -133,7 +136,10 @@ mod tests {
 
     #[async_trait]
     impl Provider for MockProvider {
-        async fn complete(&self, _request: CompletionRequest) -> Result<CompletionResponse, ProviderError> {
+        async fn complete(
+            &self,
+            _request: CompletionRequest,
+        ) -> Result<CompletionResponse, ProviderError> {
             Ok(self.response.clone())
         }
     }
@@ -169,7 +175,10 @@ mod tests {
 
     #[async_trait]
     impl Provider for ErrorProvider {
-        async fn complete(&self, _request: CompletionRequest) -> Result<CompletionResponse, ProviderError> {
+        async fn complete(
+            &self,
+            _request: CompletionRequest,
+        ) -> Result<CompletionResponse, ProviderError> {
             Err(ProviderError::RateLimited {
                 retry_after_ms: Some(1000),
             })
@@ -216,7 +225,10 @@ mod tests {
             arguments_delta: "{\"q\":".into(),
         };
         let done = StreamEvent::Done {
-            usage: Usage { input_tokens: 10, output_tokens: 5 },
+            usage: Usage {
+                input_tokens: 10,
+                output_tokens: 5,
+            },
             finish_reason: FinishReason::ToolUse,
         };
 
@@ -228,14 +240,20 @@ mod tests {
             _ => panic!("expected ToolCallStart"),
         }
         match delta {
-            StreamEvent::ToolCallDelta { id, arguments_delta } => {
+            StreamEvent::ToolCallDelta {
+                id,
+                arguments_delta,
+            } => {
                 assert_eq!(id, "c1");
                 assert_eq!(arguments_delta, "{\"q\":");
             }
             _ => panic!("expected ToolCallDelta"),
         }
         match done {
-            StreamEvent::Done { usage, finish_reason } => {
+            StreamEvent::Done {
+                usage,
+                finish_reason,
+            } => {
                 assert_eq!(usage.total_tokens(), 15);
                 assert_eq!(finish_reason, FinishReason::ToolUse);
             }

@@ -80,7 +80,10 @@ pub trait Channel: Send + Sync {
     ///
     /// Returns a guard that, when dropped, stops the indicator. Channels that
     /// don't support typing indicators can use the default no-op implementation.
-    async fn start_typing(&self, _metadata: &HashMap<String, serde_json::Value>) -> Option<TypingGuard> {
+    async fn start_typing(
+        &self,
+        _metadata: &HashMap<String, serde_json::Value>,
+    ) -> Option<TypingGuard> {
         None
     }
 }
@@ -94,7 +97,9 @@ pub struct TypingGuard {
 impl TypingGuard {
     /// Create a new typing guard that will cancel when dropped.
     pub fn new(cancel_tx: tokio::sync::oneshot::Sender<()>) -> Self {
-        Self { _cancel_tx: cancel_tx }
+        Self {
+            _cancel_tx: cancel_tx,
+        }
     }
 }
 
@@ -127,7 +132,7 @@ impl ChannelAdapter {
 
                     if let Err(e) = channel.send(response).await {
                         // If we can't send back, log and continue
-                        eprintln!("channel send error: {}", e);
+                        eprintln!("channel send error: {e}");
                     }
                 }
                 Err(e) => {
@@ -138,7 +143,7 @@ impl ChannelAdapter {
                     };
 
                     if let Err(send_err) = channel.send_error(error_response).await {
-                        eprintln!("channel send_error error: {}", send_err);
+                        eprintln!("channel send_error error: {send_err}");
                     }
                 }
             }
@@ -229,7 +234,10 @@ mod tests {
         let provider = Arc::new(FixedProvider {
             responses: vec![CompletionResponse {
                 message: Message::assistant("Hello back!"),
-                usage: Usage { input_tokens: 5, output_tokens: 3 },
+                usage: Usage {
+                    input_tokens: 5,
+                    output_tokens: 3,
+                },
                 finish_reason: FinishReason::Stop,
             }],
             call_count: AtomicUsize::new(0),

@@ -3,9 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use crate::message::Message;
-use crate::provider::{
-    CompletionRequest, CompletionResponse, FinishReason, Provider, Usage,
-};
+use crate::provider::{CompletionRequest, FinishReason, Provider, Usage};
 use crate::tool::{Tool, ToolDefinition, ToolError, ToolRegistry};
 
 // ---------------------------------------------------------------------------
@@ -74,10 +72,7 @@ impl SubAgentRunner {
             .or(self.config.default_system_prompt.as_deref())
             .unwrap_or("You are a helpful sub-agent. Complete the given task concisely.");
 
-        let mut messages = vec![
-            Message::system(sys_prompt),
-            Message::user(task),
-        ];
+        let mut messages = vec![Message::system(sys_prompt), Message::user(task)];
 
         let mut total_usage = Usage::default();
         let tool_defs = self.tools.definitions();
@@ -118,7 +113,7 @@ impl SubAgentRunner {
                             },
                             Err(e) => crate::message::ToolResult {
                                 call_id: call.id.clone(),
-                                content: format!("Error: {}", e),
+                                content: format!("Error: {e}"),
                                 is_error: true,
                             },
                         },
@@ -257,17 +252,34 @@ impl Tool for SpawnAgentTool {
 /// an ephemeral sub-agent.
 pub struct DelegateToAgentTool {
     /// Map of lowercase agent names to their runtimes.
-    runtimes: Arc<tokio::sync::RwLock<std::collections::HashMap<String, Arc<crate::runtime::Runtime<crate::context::CharEstimator>>>>>,
+    runtimes: Arc<
+        tokio::sync::RwLock<
+            std::collections::HashMap<
+                String,
+                Arc<crate::runtime::Runtime<crate::context::CharEstimator>>,
+            >,
+        >,
+    >,
     /// Name of the agent that owns this tool (to prevent self-delegation).
     self_name: String,
 }
 
 impl DelegateToAgentTool {
     pub fn new(
-        runtimes: Arc<tokio::sync::RwLock<std::collections::HashMap<String, Arc<crate::runtime::Runtime<crate::context::CharEstimator>>>>>,
+        runtimes: Arc<
+            tokio::sync::RwLock<
+                std::collections::HashMap<
+                    String,
+                    Arc<crate::runtime::Runtime<crate::context::CharEstimator>>,
+                >,
+            >,
+        >,
         self_name: String,
     ) -> Self {
-        Self { runtimes, self_name }
+        Self {
+            runtimes,
+            self_name,
+        }
     }
 }
 
@@ -341,7 +353,7 @@ impl Tool for DelegateToAgentTool {
         let result = runtime
             .run(&ns, crate::message::Message::user(task))
             .await
-            .map_err(|e| ToolError::ExecutionFailed(format!("agent '{}' failed: {}", agent_name, e)))?;
+            .map_err(|e| ToolError::ExecutionFailed(format!("agent '{agent_name}' failed: {e}")))?;
 
         Ok(format!(
             "[Agent '{}' responded ({} turns, {} tokens)]\n\n{}",
@@ -492,7 +504,10 @@ mod tests {
         let config = SubAgentConfig::default();
 
         let runner = SubAgentRunner::new(provider, tools, config);
-        let result = runner.run("What is the meaning of life?", None).await.unwrap();
+        let result = runner
+            .run("What is the meaning of life?", None)
+            .await
+            .unwrap();
 
         assert_eq!(result.content, "42");
         assert_eq!(result.turns_used, 1);

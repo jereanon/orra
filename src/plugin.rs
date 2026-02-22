@@ -5,7 +5,6 @@
 //! the `Plugin` trait and can be loaded from a plugin registry.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use async_trait::async_trait;
 
@@ -266,6 +265,7 @@ pub enum PluginError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
 
     struct TestPlugin {
         name: String,

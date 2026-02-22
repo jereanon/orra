@@ -52,11 +52,11 @@ impl SessionStore for FileStore {
         match fs::read_to_string(&path).await {
             Ok(contents) => {
                 let session: Session = serde_json::from_str(&contents)
-                    .map_err(|e| StoreError::Storage(format!("deserialize error: {}", e)))?;
+                    .map_err(|e| StoreError::Storage(format!("deserialize error: {e}")))?;
                 Ok(Some(session))
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(StoreError::Storage(format!("read error: {}", e))),
+            Err(e) => Err(StoreError::Storage(format!("read error: {e}"))),
         }
     }
 
@@ -67,21 +67,21 @@ impl SessionStore for FileStore {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)
                 .await
-                .map_err(|e| StoreError::Storage(format!("mkdir error: {}", e)))?;
+                .map_err(|e| StoreError::Storage(format!("mkdir error: {e}")))?;
         }
 
         // Write to temp file first, then atomic rename
         let tmp_path = path.with_extension("tmp");
         let json = serde_json::to_string_pretty(session)
-            .map_err(|e| StoreError::Storage(format!("serialize error: {}", e)))?;
+            .map_err(|e| StoreError::Storage(format!("serialize error: {e}")))?;
 
         fs::write(&tmp_path, &json)
             .await
-            .map_err(|e| StoreError::Storage(format!("write error: {}", e)))?;
+            .map_err(|e| StoreError::Storage(format!("write error: {e}")))?;
 
         fs::rename(&tmp_path, &path)
             .await
-            .map_err(|e| StoreError::Storage(format!("rename error: {}", e)))?;
+            .map_err(|e| StoreError::Storage(format!("rename error: {e}")))?;
 
         Ok(())
     }
@@ -91,7 +91,7 @@ impl SessionStore for FileStore {
         match fs::remove_file(&path).await {
             Ok(()) => Ok(true),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
-            Err(e) => Err(StoreError::Storage(format!("delete error: {}", e))),
+            Err(e) => Err(StoreError::Storage(format!("delete error: {e}"))),
         }
     }
 
@@ -118,12 +118,12 @@ impl SessionStore for FileStore {
         while let Some(dir) = dirs.pop() {
             let mut entries = fs::read_dir(&dir)
                 .await
-                .map_err(|e| StoreError::Storage(format!("readdir error: {}", e)))?;
+                .map_err(|e| StoreError::Storage(format!("readdir error: {e}")))?;
 
             while let Some(entry) = entries
                 .next_entry()
                 .await
-                .map_err(|e| StoreError::Storage(format!("entry error: {}", e)))?
+                .map_err(|e| StoreError::Storage(format!("entry error: {e}")))?
             {
                 let path = entry.path();
                 if path.is_dir() {
@@ -136,7 +136,7 @@ impl SessionStore for FileStore {
             }
         }
 
-        namespaces.sort_by(|a, b| a.key().cmp(&b.key()));
+        namespaces.sort_by_key(|a| a.key());
         Ok(namespaces)
     }
 }
@@ -180,13 +180,19 @@ mod tests {
     #[tokio::test]
     async fn correct_directory_structure() {
         let (tmp, store) = make_store();
-        let ns = Namespace::new("company").child("engineering").child("alice");
+        let ns = Namespace::new("company")
+            .child("engineering")
+            .child("alice");
 
         let session = Session::new(ns.clone());
         store.save(&session).await.unwrap();
 
-        let expected = tmp.path().join("company").join("engineering").join("alice.json");
-        assert!(expected.exists(), "expected file at {:?}", expected);
+        let expected = tmp
+            .path()
+            .join("company")
+            .join("engineering")
+            .join("alice.json");
+        assert!(expected.exists(), "expected file at {expected:?}");
     }
 
     #[tokio::test]
@@ -227,9 +233,18 @@ mod tests {
     async fn list_all_sessions() {
         let (_tmp, store) = make_store();
 
-        store.save(&Session::new(Namespace::new("acme").child("alice"))).await.unwrap();
-        store.save(&Session::new(Namespace::new("acme").child("bob"))).await.unwrap();
-        store.save(&Session::new(Namespace::new("other"))).await.unwrap();
+        store
+            .save(&Session::new(Namespace::new("acme").child("alice")))
+            .await
+            .unwrap();
+        store
+            .save(&Session::new(Namespace::new("acme").child("bob")))
+            .await
+            .unwrap();
+        store
+            .save(&Session::new(Namespace::new("other")))
+            .await
+            .unwrap();
 
         let all = store.list(None).await.unwrap();
         assert_eq!(all.len(), 3);
@@ -239,9 +254,18 @@ mod tests {
     async fn list_with_prefix() {
         let (_tmp, store) = make_store();
 
-        store.save(&Session::new(Namespace::new("acme").child("alice"))).await.unwrap();
-        store.save(&Session::new(Namespace::new("acme").child("bob"))).await.unwrap();
-        store.save(&Session::new(Namespace::new("other"))).await.unwrap();
+        store
+            .save(&Session::new(Namespace::new("acme").child("alice")))
+            .await
+            .unwrap();
+        store
+            .save(&Session::new(Namespace::new("acme").child("bob")))
+            .await
+            .unwrap();
+        store
+            .save(&Session::new(Namespace::new("other")))
+            .await
+            .unwrap();
 
         let acme = Namespace::new("acme");
         let filtered = store.list(Some(&acme)).await.unwrap();
@@ -270,7 +294,11 @@ mod tests {
     #[tokio::test]
     async fn deeply_nested_namespaces() {
         let (_tmp, store) = make_store();
-        let ns = Namespace::new("a").child("b").child("c").child("d").child("e");
+        let ns = Namespace::new("a")
+            .child("b")
+            .child("c")
+            .child("d")
+            .child("e");
 
         let mut session = Session::new(ns.clone());
         session.push_message(Message::user("deep"));
@@ -302,9 +330,15 @@ mod tests {
         let (_tmp, store) = make_store();
 
         // Session directly at the prefix namespace
-        store.save(&Session::new(Namespace::new("acme"))).await.unwrap();
+        store
+            .save(&Session::new(Namespace::new("acme")))
+            .await
+            .unwrap();
         // Session under the prefix
-        store.save(&Session::new(Namespace::new("acme").child("alice"))).await.unwrap();
+        store
+            .save(&Session::new(Namespace::new("acme").child("alice")))
+            .await
+            .unwrap();
 
         let acme = Namespace::new("acme");
         let filtered = store.list(Some(&acme)).await.unwrap();

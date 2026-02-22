@@ -75,7 +75,7 @@ pub fn extract_text(html: &str) -> String {
         "</h2>", "</h3>", "</h4>", "</h5>", "</h6>", "<li", "</li>", "<tr", "</tr>",
     ];
     for tag in &block_tags {
-        result = result.replace(tag, &format!("\n{}", tag));
+        result = result.replace(tag, &format!("\n{tag}"));
     }
 
     // Strip all remaining tags
@@ -270,7 +270,7 @@ impl Tool for BrowserTool {
 
         let mut output = String::new();
         if let Some(title) = &content.title {
-            output.push_str(&format!("Title: {}\n", title));
+            output.push_str(&format!("Title: {title}\n"));
         }
         output.push_str(&format!("URL: {}\n\n", content.url));
         output.push_str(&content.text);

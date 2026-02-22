@@ -18,7 +18,11 @@ pub struct GitHubConfig {
 }
 
 impl GitHubConfig {
-    pub fn new(token: impl Into<String>, owner: impl Into<String>, repo: impl Into<String>) -> Self {
+    pub fn new(
+        token: impl Into<String>,
+        owner: impl Into<String>,
+        repo: impl Into<String>,
+    ) -> Self {
         Self {
             client: Client::new(),
             token: token.into(),
@@ -133,7 +137,10 @@ impl Tool for ListIssuesTool {
     }
 
     async fn execute(&self, input: serde_json::Value) -> Result<String, ToolError> {
-        let state = input.get("state").and_then(|v| v.as_str()).unwrap_or("open");
+        let state = input
+            .get("state")
+            .and_then(|v| v.as_str())
+            .unwrap_or("open");
         let limit = input.get("limit").and_then(|v| v.as_u64()).unwrap_or(10);
 
         let mut req = self
@@ -145,21 +152,26 @@ impl Tool for ListIssuesTool {
             req = req.query(&[("labels", labels)]);
         }
 
-        let resp = req.send().await.map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
 
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            return Err(ToolError::ExecutionFailed(format!("GitHub API {}: {}", status, body)));
+            return Err(ToolError::ExecutionFailed(format!(
+                "GitHub API {status}: {body}"
+            )));
         }
 
         let issues: Vec<GhIssue> = resp
             .json()
             .await
-            .map_err(|e| ToolError::ExecutionFailed(format!("parse error: {}", e)))?;
+            .map_err(|e| ToolError::ExecutionFailed(format!("parse error: {e}")))?;
 
         if issues.is_empty() {
-            return Ok(format!("No {} issues found.", state));
+            return Ok(format!("No {state} issues found."));
         }
 
         let mut lines = Vec::new();
@@ -167,14 +179,20 @@ impl Tool for ListIssuesTool {
             let labels: Vec<&str> = issue.labels.iter().map(|l| l.name.as_str()).collect();
             let assignees: Vec<&str> = issue.assignees.iter().map(|a| a.login.as_str()).collect();
 
-            let mut parts = vec![format!("#{} [{}] {}", issue.number, issue.state, issue.title)];
+            let mut parts = vec![format!(
+                "#{} [{}] {}",
+                issue.number, issue.state, issue.title
+            )];
             if !labels.is_empty() {
                 parts.push(format!("  labels: {}", labels.join(", ")));
             }
             if !assignees.is_empty() {
                 parts.push(format!("  assigned: {}", assignees.join(", ")));
             }
-            parts.push(format!("  by @{}, {} comments", issue.user.login, issue.comments));
+            parts.push(format!(
+                "  by @{}, {} comments",
+                issue.user.login, issue.comments
+            ));
             lines.push(parts.join("\n"));
         }
 
@@ -197,7 +215,9 @@ impl Tool for GetIssueTool {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "get_issue".into(),
-            description: "Get details of a specific issue by number, including its body and recent comments.".into(),
+            description:
+                "Get details of a specific issue by number, including its body and recent comments."
+                    .into(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -219,7 +239,7 @@ impl Tool for GetIssueTool {
 
         let resp = self
             .gh
-            .request(reqwest::Method::GET, &format!("issues/{}", number))
+            .request(reqwest::Method::GET, &format!("issues/{number}"))
             .send()
             .await
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
@@ -227,18 +247,28 @@ impl Tool for GetIssueTool {
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            return Err(ToolError::ExecutionFailed(format!("GitHub API {}: {}", status, body)));
+            return Err(ToolError::ExecutionFailed(format!(
+                "GitHub API {status}: {body}"
+            )));
         }
 
         let issue: GhIssue = resp
             .json()
             .await
-            .map_err(|e| ToolError::ExecutionFailed(format!("parse error: {}", e)))?;
+            .map_err(|e| ToolError::ExecutionFailed(format!("parse error: {e}")))?;
 
         let labels: Vec<&str> = issue.labels.iter().map(|l| l.name.as_str()).collect();
         let assignees: Vec<&str> = issue.assignees.iter().map(|a| a.login.as_str()).collect();
-        let labels_str = if labels.is_empty() { "none".to_string() } else { labels.join(", ") };
-        let assignees_str = if assignees.is_empty() { "none".to_string() } else { assignees.join(", ") };
+        let labels_str = if labels.is_empty() {
+            "none".to_string()
+        } else {
+            labels.join(", ")
+        };
+        let assignees_str = if assignees.is_empty() {
+            "none".to_string()
+        } else {
+            assignees.join(", ")
+        };
 
         let mut text = format!(
             "#{} [{}] {}\nby @{} on {}\nlabels: {}\nassigned: {}\n\n{}",
@@ -256,7 +286,7 @@ impl Tool for GetIssueTool {
         if issue.comments > 0 {
             let comments_resp = self
                 .gh
-                .request(reqwest::Method::GET, &format!("issues/{}/comments", number))
+                .request(reqwest::Method::GET, &format!("issues/{number}/comments"))
                 .query(&[("per_page", "5")])
                 .send()
                 .await;
@@ -350,13 +380,15 @@ impl Tool for CreateIssueTool {
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            return Err(ToolError::ExecutionFailed(format!("GitHub API {}: {}", status, body)));
+            return Err(ToolError::ExecutionFailed(format!(
+                "GitHub API {status}: {body}"
+            )));
         }
 
         let issue: GhIssue = resp
             .json()
             .await
-            .map_err(|e| ToolError::ExecutionFailed(format!("parse error: {}", e)))?;
+            .map_err(|e| ToolError::ExecutionFailed(format!("parse error: {e}")))?;
 
         Ok(format!("Created issue #{}: {}", issue.number, issue.title))
     }
@@ -408,7 +440,7 @@ impl Tool for AddCommentTool {
 
         let resp = self
             .gh
-            .request(reqwest::Method::POST, &format!("issues/{}/comments", number))
+            .request(reqwest::Method::POST, &format!("issues/{number}/comments"))
             .json(&serde_json::json!({ "body": body }))
             .send()
             .await
@@ -418,12 +450,11 @@ impl Tool for AddCommentTool {
             let status = resp.status();
             let resp_body = resp.text().await.unwrap_or_default();
             return Err(ToolError::ExecutionFailed(format!(
-                "GitHub API {}: {}",
-                status, resp_body
+                "GitHub API {status}: {resp_body}"
             )));
         }
 
-        Ok(format!("Added comment to issue #{}.", number))
+        Ok(format!("Added comment to issue #{number}."))
     }
 }
 
@@ -480,7 +511,7 @@ impl Tool for CloseIssueTool {
         if let Some(comment) = input.get("comment").and_then(|v| v.as_str()) {
             let _ = self
                 .gh
-                .request(reqwest::Method::POST, &format!("issues/{}/comments", number))
+                .request(reqwest::Method::POST, &format!("issues/{number}/comments"))
                 .json(&serde_json::json!({ "body": comment }))
                 .send()
                 .await;
@@ -488,7 +519,7 @@ impl Tool for CloseIssueTool {
 
         let resp = self
             .gh
-            .request(reqwest::Method::PATCH, &format!("issues/{}", number))
+            .request(reqwest::Method::PATCH, &format!("issues/{number}"))
             .json(&serde_json::json!({
                 "state": "closed",
                 "state_reason": reason
@@ -500,10 +531,12 @@ impl Tool for CloseIssueTool {
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            return Err(ToolError::ExecutionFailed(format!("GitHub API {}: {}", status, body)));
+            return Err(ToolError::ExecutionFailed(format!(
+                "GitHub API {status}: {body}"
+            )));
         }
 
-        Ok(format!("Closed issue #{} (reason: {}).", number, reason))
+        Ok(format!("Closed issue #{number} (reason: {reason})."))
     }
 }
 
@@ -549,7 +582,7 @@ impl Tool for SearchIssuesTool {
 
         let mut q = format!("{} repo:{}/{} is:issue", query, self.gh.owner, self.gh.repo);
         if let Some(state) = input.get("state").and_then(|v| v.as_str()) {
-            q.push_str(&format!(" is:{}", state));
+            q.push_str(&format!(" is:{state}"));
         }
 
         let resp = self
@@ -568,7 +601,9 @@ impl Tool for SearchIssuesTool {
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            return Err(ToolError::ExecutionFailed(format!("GitHub API {}: {}", status, body)));
+            return Err(ToolError::ExecutionFailed(format!(
+                "GitHub API {status}: {body}"
+            )));
         }
 
         #[derive(Deserialize)]
@@ -580,10 +615,10 @@ impl Tool for SearchIssuesTool {
         let result: SearchResult = resp
             .json()
             .await
-            .map_err(|e| ToolError::ExecutionFailed(format!("parse error: {}", e)))?;
+            .map_err(|e| ToolError::ExecutionFailed(format!("parse error: {e}")))?;
 
         if result.items.is_empty() {
-            return Ok(format!("No issues found for '{}'.", query));
+            return Ok(format!("No issues found for '{query}'."));
         }
 
         let mut lines = vec![format!("{} results:", result.total_count)];

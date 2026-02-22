@@ -87,6 +87,6 @@ jobs:
 
             Install via cargo:
             ```
-            cargo add agentic-rs
+            cargo add orra
             ```
           generate_release_notes: false

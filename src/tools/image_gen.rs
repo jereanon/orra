@@ -146,9 +146,7 @@ impl ImageProvider for DallEProvider {
             .ok_or_else(|| ImageGenError::Parse("missing image url".into()))?
             .to_string();
 
-        let revised_prompt = image_data["revised_prompt"]
-            .as_str()
-            .map(|s| s.to_string());
+        let revised_prompt = image_data["revised_prompt"].as_str().map(|s| s.to_string());
 
         Ok(GeneratedImage {
             url,
@@ -220,7 +218,10 @@ impl Tool for ImageGenTool {
             .unwrap_or("1024x1024")
             .to_string();
 
-        let style = input.get("style").and_then(|v| v.as_str()).map(String::from);
+        let style = input
+            .get("style")
+            .and_then(|v| v.as_str())
+            .map(String::from);
         let quality = input
             .get("quality")
             .and_then(|v| v.as_str())
@@ -240,7 +241,7 @@ impl Tool for ImageGenTool {
 
         let mut output = format!("Generated image: {}", result.url);
         if let Some(revised) = &result.revised_prompt {
-            output.push_str(&format!("\nRevised prompt: {}", revised));
+            output.push_str(&format!("\nRevised prompt: {revised}"));
         }
 
         Ok(output)
@@ -290,7 +291,7 @@ mod tests {
         ) -> Result<GeneratedImage, ImageGenError> {
             Ok(GeneratedImage {
                 url: self.url.clone(),
-                revised_prompt: Some(format!("A beautiful {}", prompt)),
+                revised_prompt: Some(format!("A beautiful {prompt}")),
             })
         }
     }
@@ -374,9 +375,7 @@ mod tests {
 
     #[test]
     fn tool_definition_valid() {
-        let provider = Arc::new(MockImageProvider {
-            url: "test".into(),
-        });
+        let provider = Arc::new(MockImageProvider { url: "test".into() });
         let tool = ImageGenTool::new(provider);
         let def = tool.definition();
 

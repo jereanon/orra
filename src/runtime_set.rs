@@ -1,6 +1,6 @@
 //! Multi-agent runtime management.
 //!
-//! Provides [`RuntimeSet`] for managing a collection of named runtimes,
+//! Provides [`RuntimeSetBuilder`] for managing a collection of named runtimes,
 //! one per agent. Handles the chicken-and-egg problem of inter-agent
 //! delegation (tools need runtimes, runtimes need tools) by using a
 //! shared `Arc<RwLock<HashMap>>` that is populated after all runtimes
@@ -25,7 +25,7 @@ use crate::tools::delegation::DelegateToAgentTool;
 /// A shared map of named runtimes, keyed by lowercase agent name.
 pub type RuntimeMap<T> = Arc<RwLock<HashMap<String, Arc<Runtime<T>>>>>;
 
-/// Configuration for building a [`RuntimeSet`].
+/// Configuration for building a runtime set.
 pub struct RuntimeSetConfig {
     /// Maximum turns per agent.
     pub max_turns: usize,
@@ -94,6 +94,7 @@ pub struct RuntimeSetResult<T: Tokenizer> {
 /// // result.runtimes contains both agents
 /// // result.default_agent is "Atlas"
 /// ```
+#[allow(clippy::type_complexity)]
 pub struct RuntimeSetBuilder<F>
 where
     F: FnMut(&AgentProfile) -> ToolRegistry,
@@ -167,7 +168,10 @@ where
     }
 
     /// Set a factory function that creates a `HookRegistry` for each agent.
-    pub fn hook_factory(mut self, factory: impl FnMut(&AgentProfile) -> HookRegistry + 'static) -> Self {
+    pub fn hook_factory(
+        mut self,
+        factory: impl FnMut(&AgentProfile) -> HookRegistry + 'static,
+    ) -> Self {
         self.hook_factory = Some(Box::new(factory));
         self
     }
@@ -261,7 +265,9 @@ where
 mod tests {
     use super::*;
     use crate::message::Message;
-    use crate::provider::{CompletionRequest, CompletionResponse, FinishReason, ProviderError, Usage};
+    use crate::provider::{
+        CompletionRequest, CompletionResponse, FinishReason, ProviderError, Usage,
+    };
     use async_trait::async_trait;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -286,7 +292,9 @@ mod tests {
 
     #[tokio::test]
     async fn build_single_agent() {
-        let provider = Arc::new(FixedProvider { call_count: AtomicUsize::new(0) });
+        let provider = Arc::new(FixedProvider {
+            call_count: AtomicUsize::new(0),
+        });
         let store = Arc::new(crate::store::InMemoryStore::new());
 
         let result = RuntimeSetBuilder::new()
@@ -308,7 +316,9 @@ mod tests {
 
     #[tokio::test]
     async fn build_multiple_agents() {
-        let provider = Arc::new(FixedProvider { call_count: AtomicUsize::new(0) });
+        let provider = Arc::new(FixedProvider {
+            call_count: AtomicUsize::new(0),
+        });
         let store = Arc::new(crate::store::InMemoryStore::new());
 
         let result = RuntimeSetBuilder::new()
@@ -330,7 +340,9 @@ mod tests {
 
     #[tokio::test]
     async fn build_with_tool_factory() {
-        let provider = Arc::new(FixedProvider { call_count: AtomicUsize::new(0) });
+        let provider = Arc::new(FixedProvider {
+            call_count: AtomicUsize::new(0),
+        });
         let store = Arc::new(crate::store::InMemoryStore::new());
 
         let result = RuntimeSetBuilder::new()
@@ -354,7 +366,9 @@ mod tests {
 
     #[tokio::test]
     async fn build_with_custom_prompt() {
-        let provider = Arc::new(FixedProvider { call_count: AtomicUsize::new(0) });
+        let provider = Arc::new(FixedProvider {
+            call_count: AtomicUsize::new(0),
+        });
         let store = Arc::new(crate::store::InMemoryStore::new());
 
         let mut prompt_builder = PromptBuilder::new();
@@ -378,7 +392,9 @@ mod tests {
 
     #[tokio::test]
     async fn default_agent_is_first() {
-        let provider = Arc::new(FixedProvider { call_count: AtomicUsize::new(0) });
+        let provider = Arc::new(FixedProvider {
+            call_count: AtomicUsize::new(0),
+        });
         let store = Arc::new(crate::store::InMemoryStore::new());
 
         let result = RuntimeSetBuilder::new()
@@ -402,7 +418,9 @@ mod tests {
     #[tokio::test]
     #[should_panic(expected = "at least one agent")]
     async fn build_with_no_agents_panics() {
-        let provider = Arc::new(FixedProvider { call_count: AtomicUsize::new(0) });
+        let provider = Arc::new(FixedProvider {
+            call_count: AtomicUsize::new(0),
+        });
         let store = Arc::new(crate::store::InMemoryStore::new());
 
         RuntimeSetBuilder::new()

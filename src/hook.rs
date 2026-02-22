@@ -29,7 +29,11 @@ pub trait Hook: Send + Sync {
     /// (e.g., change arguments, rename the tool). Return `Err(reason)` to
     /// block the tool call — the reason string becomes the tool result with
     /// `is_error: true`.
-    async fn before_tool_call(&self, _namespace: &Namespace, _call: &mut ToolCall) -> Result<(), String> {
+    async fn before_tool_call(
+        &self,
+        _namespace: &Namespace,
+        _call: &mut ToolCall,
+    ) -> Result<(), String> {
         Ok(())
     }
 
@@ -64,7 +68,11 @@ impl HookRegistry {
         self.hooks.is_empty()
     }
 
-    pub(crate) async fn dispatch_after_session_load(&self, namespace: &Namespace, session: &Session) {
+    pub(crate) async fn dispatch_after_session_load(
+        &self,
+        namespace: &Namespace,
+        session: &Session,
+    ) {
         for hook in &self.hooks {
             hook.after_session_load(namespace, session).await;
         }
@@ -82,7 +90,11 @@ impl HookRegistry {
         }
     }
 
-    pub(crate) async fn dispatch_before_tool_call(&self, namespace: &Namespace, call: &mut ToolCall) -> Result<(), String> {
+    pub(crate) async fn dispatch_before_tool_call(
+        &self,
+        namespace: &Namespace,
+        call: &mut ToolCall,
+    ) -> Result<(), String> {
         for hook in &self.hooks {
             hook.before_tool_call(namespace, call).await?;
         }
@@ -95,7 +107,11 @@ impl HookRegistry {
         }
     }
 
-    pub(crate) async fn dispatch_before_session_save(&self, namespace: &Namespace, session: &mut Session) {
+    pub(crate) async fn dispatch_before_session_save(
+        &self,
+        namespace: &Namespace,
+        session: &mut Session,
+    ) {
         for hook in &self.hooks {
             hook.before_session_save(namespace, session).await;
         }
@@ -147,7 +163,11 @@ mod tests {
         async fn after_provider_call(&self, _response: &CompletionResponse) {
             self.after_provider.fetch_add(1, Ordering::SeqCst);
         }
-        async fn before_tool_call(&self, _ns: &Namespace, _call: &mut ToolCall) -> Result<(), String> {
+        async fn before_tool_call(
+            &self,
+            _ns: &Namespace,
+            _call: &mut ToolCall,
+        ) -> Result<(), String> {
             self.before_tool.fetch_add(1, Ordering::SeqCst);
             Ok(())
         }
@@ -194,7 +214,7 @@ mod tests {
             name: "test".into(),
             arguments: serde_json::json!({}),
         };
-        registry.dispatch_before_tool_call(&ns, &mut call).await;
+        let _ = registry.dispatch_before_tool_call(&ns, &mut call).await;
         assert_eq!(hook.before_tool.load(Ordering::SeqCst), 1);
 
         let mut result = ToolResult {
@@ -206,7 +226,9 @@ mod tests {
         assert_eq!(hook.after_tool.load(Ordering::SeqCst), 1);
 
         let mut session = Session::new(ns.clone());
-        registry.dispatch_before_session_save(&ns, &mut session).await;
+        registry
+            .dispatch_before_session_save(&ns, &mut session)
+            .await;
         assert_eq!(hook.before_save.load(Ordering::SeqCst), 1);
     }
 
@@ -250,8 +272,12 @@ mod tests {
         }
 
         let mut registry = HookRegistry::new();
-        registry.register(Arc::new(AppendHook { suffix: ":first".into() }));
-        registry.register(Arc::new(AppendHook { suffix: ":second".into() }));
+        registry.register(Arc::new(AppendHook {
+            suffix: ":first".into(),
+        }));
+        registry.register(Arc::new(AppendHook {
+            suffix: ":second".into(),
+        }));
 
         let call = ToolCall {
             id: "c1".into(),
@@ -278,6 +304,8 @@ mod tests {
 
         // These should all succeed silently
         registry.dispatch_after_session_load(&ns, &session).await;
-        registry.dispatch_before_session_save(&ns, &mut session).await;
+        registry
+            .dispatch_before_session_save(&ns, &mut session)
+            .await;
     }
 }

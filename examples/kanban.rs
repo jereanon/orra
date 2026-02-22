@@ -34,14 +34,32 @@ struct Board {
 impl Board {
     fn new() -> Self {
         let mut columns = BTreeMap::new();
-        columns.insert("backlog".into(), vec![
-            Task { id: 1, title: "Design login page".into(), assignee: None },
-            Task { id: 2, title: "Set up CI pipeline".into(), assignee: None },
-            Task { id: 3, title: "Write API docs".into(), assignee: None },
-        ]);
+        columns.insert(
+            "backlog".into(),
+            vec![
+                Task {
+                    id: 1,
+                    title: "Design login page".into(),
+                    assignee: None,
+                },
+                Task {
+                    id: 2,
+                    title: "Set up CI pipeline".into(),
+                    assignee: None,
+                },
+                Task {
+                    id: 3,
+                    title: "Write API docs".into(),
+                    assignee: None,
+                },
+            ],
+        );
         columns.insert("in-progress".into(), vec![]);
         columns.insert("done".into(), vec![]);
-        Self { columns, next_id: 4 }
+        Self {
+            columns,
+            next_id: 4,
+        }
     }
 }
 
@@ -89,8 +107,7 @@ impl Tool for ListTasksTool {
         ToolDefinition {
             name: "list_tasks".into(),
             description:
-                "List tasks in a specific column. If no column is provided, lists all tasks."
-                    .into(),
+                "List tasks in a specific column. If no column is provided, lists all tasks.".into(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -114,7 +131,7 @@ impl Tool for ListTasksTool {
                     continue;
                 }
             }
-            lines.push(format!("[{}]", col_name));
+            lines.push(format!("[{col_name}]"));
             if tasks.is_empty() {
                 lines.push("  (empty)".into());
             }
@@ -122,7 +139,7 @@ impl Tool for ListTasksTool {
                 let assignee = task
                     .assignee
                     .as_deref()
-                    .map(|a| format!(" (assigned to {})", a))
+                    .map(|a| format!(" (assigned to {a})"))
                     .unwrap_or_default();
                 lines.push(format!("  #{}: {}{}", task.id, task.title, assignee));
             }
@@ -189,7 +206,9 @@ impl Tool for CreateTaskTool {
         let mut board = self.board.write().await;
 
         if !board.columns.contains_key(column) {
-            return Err(ToolError::InvalidInput(format!("column '{}' not found", column)));
+            return Err(ToolError::InvalidInput(format!(
+                "column '{column}' not found"
+            )));
         }
 
         let id = board.next_id;
@@ -201,7 +220,7 @@ impl Tool for CreateTaskTool {
             assignee,
         });
 
-        Ok(format!("Created task #{} '{}' in '{}'", id, title, column))
+        Ok(format!("Created task #{id} '{title}' in '{column}'"))
     }
 }
 
@@ -214,7 +233,9 @@ impl Tool for MoveTaskTool {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "move_task".into(),
-            description: "Move a task from one column to another. Identify the task by its ID or title.".into(),
+            description:
+                "Move a task from one column to another. Identify the task by its ID or title."
+                    .into(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -242,7 +263,10 @@ impl Tool for MoveTaskTool {
             .and_then(|v| v.as_str())
             .ok_or_else(|| ToolError::InvalidInput("missing 'to' column".into()))?;
 
-        let task_id = input.get("task_id").and_then(|v| v.as_u64()).map(|v| v as u32);
+        let task_id = input
+            .get("task_id")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u32);
         let task_title = input.get("task_title").and_then(|v| v.as_str());
 
         if task_id.is_none() && task_title.is_none() {
@@ -255,8 +279,7 @@ impl Tool for MoveTaskTool {
 
         if !board.columns.contains_key(dest) {
             return Err(ToolError::InvalidInput(format!(
-                "destination column '{}' not found",
-                dest
+                "destination column '{dest}' not found"
             )));
         }
 
@@ -284,15 +307,14 @@ impl Tool for MoveTaskTool {
 
         let task = found_task.ok_or_else(|| {
             ToolError::ExecutionFailed(format!(
-                "task not found (id={:?}, title={:?})",
-                task_id, task_title
+                "task not found (id={task_id:?}, title={task_title:?})"
             ))
         })?;
 
         let task_desc = format!("#{} '{}'", task.id, task.title);
         board.columns.get_mut(dest).unwrap().push(task);
 
-        Ok(format!("Moved {} from '{}' to '{}'", task_desc, source_col, dest))
+        Ok(format!("Moved {task_desc} from '{source_col}' to '{dest}'"))
     }
 }
 
@@ -351,8 +373,7 @@ impl Tool for AssignTaskTool {
         }
 
         Err(ToolError::ExecutionFailed(format!(
-            "task #{} not found",
-            task_id
+            "task #{task_id} not found"
         )))
     }
 }
@@ -363,11 +384,21 @@ impl Tool for AssignTaskTool {
 
 fn build_tools(board: &SharedBoard) -> ToolRegistry {
     let mut tools = ToolRegistry::new();
-    tools.register(Box::new(ListColumnsTool { board: board.clone() }));
-    tools.register(Box::new(ListTasksTool { board: board.clone() }));
-    tools.register(Box::new(CreateTaskTool { board: board.clone() }));
-    tools.register(Box::new(MoveTaskTool { board: board.clone() }));
-    tools.register(Box::new(AssignTaskTool { board: board.clone() }));
+    tools.register(Box::new(ListColumnsTool {
+        board: board.clone(),
+    }));
+    tools.register(Box::new(ListTasksTool {
+        board: board.clone(),
+    }));
+    tools.register(Box::new(CreateTaskTool {
+        board: board.clone(),
+    }));
+    tools.register(Box::new(MoveTaskTool {
+        board: board.clone(),
+    }));
+    tools.register(Box::new(AssignTaskTool {
+        board: board.clone(),
+    }));
     tools
 }
 
@@ -396,7 +427,8 @@ async fn main() {
         std::process::exit(1);
     });
 
-    let model = std::env::var("AGENTIC_MODEL").unwrap_or_else(|_| "claude-sonnet-4-5-20250929".into());
+    let model =
+        std::env::var("AGENTIC_MODEL").unwrap_or_else(|_| "claude-sonnet-4-5-20250929".into());
 
     let board = Arc::new(RwLock::new(Board::new()));
     let store = Arc::new(InMemoryStore::new());
@@ -441,7 +473,7 @@ async fn main() {
     }
 
     println!("=== Kanban PM Assistant ===");
-    println!("User: {} (role: {})", current_user, current_role);
+    println!("User: {current_user} (role: {current_role})");
     println!("Board: 3 tasks in backlog, 0 in-progress, 0 done");
     println!();
     println!("Commands:");
@@ -452,7 +484,7 @@ async fn main() {
 
     let stdin = io::stdin();
     loop {
-        print!("[{}]> ", current_user);
+        print!("[{current_user}]> ");
         io::stdout().flush().unwrap();
 
         let mut input = String::new();
@@ -473,7 +505,7 @@ async fn main() {
         if input == "/board" {
             let board = board.read().await;
             for (col, tasks) in &board.columns {
-                println!("[{}]", col);
+                println!("[{col}]");
                 if tasks.is_empty() {
                     println!("  (empty)");
                 }
@@ -481,7 +513,7 @@ async fn main() {
                     let a = task
                         .assignee
                         .as_deref()
-                        .map(|a| format!(" -> {}", a))
+                        .map(|a| format!(" -> {a}"))
                         .unwrap_or_default();
                     println!("  #{}: {}{}", task.id, task.title, a);
                 }
@@ -495,14 +527,17 @@ async fn main() {
             if parts.len() >= 2 {
                 current_user = parts[1].to_string();
                 current_role = parts.get(2).unwrap_or(&"member").to_string();
-                println!("Switched to user: {} (role: {})", current_user, current_role);
+                println!("Switched to user: {current_user} (role: {current_role})");
 
                 // Show if session exists
                 let ns = Namespace::new("company")
                     .child(&current_role)
                     .child(&current_user);
                 if let Ok(Some(session)) = store.load(&ns).await {
-                    println!("  (restored session with {} messages)", session.message_count());
+                    println!(
+                        "  (restored session with {} messages)",
+                        session.message_count()
+                    );
                 } else {
                     println!("  (new session)");
                 }
@@ -545,7 +580,7 @@ async fn main() {
                 println!();
             }
             Err(e) => {
-                eprintln!("Error: {}", e);
+                eprintln!("Error: {e}");
                 println!();
             }
         }

@@ -113,18 +113,29 @@ mod tests {
         let server_task = tokio::spawn(async move {
             let req = req_rx.recv().await.unwrap();
             assert_eq!(req.method, "tools/call");
-            resp_tx.send(JsonRpcResponse {
-                jsonrpc: "2.0".into(),
-                id: req.id,
-                result: Some(serde_json::to_value(McpToolResult {
-                    content: vec![McpContent::Text { text: "Hello, Alice!".into() }],
-                    is_error: false,
-                }).unwrap()),
-                error: None,
-            }).await.unwrap();
+            resp_tx
+                .send(JsonRpcResponse {
+                    jsonrpc: "2.0".into(),
+                    id: req.id,
+                    result: Some(
+                        serde_json::to_value(McpToolResult {
+                            content: vec![McpContent::Text {
+                                text: "Hello, Alice!".into(),
+                            }],
+                            is_error: false,
+                        })
+                        .unwrap(),
+                    ),
+                    error: None,
+                })
+                .await
+                .unwrap();
         });
 
-        let result = tool.execute(serde_json::json!({"name": "Alice"})).await.unwrap();
+        let result = tool
+            .execute(serde_json::json!({"name": "Alice"}))
+            .await
+            .unwrap();
         assert_eq!(result, "Hello, Alice!");
         server_task.await.unwrap();
     }
@@ -145,15 +156,23 @@ mod tests {
 
         let server_task = tokio::spawn(async move {
             let req = req_rx.recv().await.unwrap();
-            resp_tx.send(JsonRpcResponse {
-                jsonrpc: "2.0".into(),
-                id: req.id,
-                result: Some(serde_json::to_value(McpToolResult {
-                    content: vec![McpContent::Text { text: "something broke".into() }],
-                    is_error: true,
-                }).unwrap()),
-                error: None,
-            }).await.unwrap();
+            resp_tx
+                .send(JsonRpcResponse {
+                    jsonrpc: "2.0".into(),
+                    id: req.id,
+                    result: Some(
+                        serde_json::to_value(McpToolResult {
+                            content: vec![McpContent::Text {
+                                text: "something broke".into(),
+                            }],
+                            is_error: true,
+                        })
+                        .unwrap(),
+                    ),
+                    error: None,
+                })
+                .await
+                .unwrap();
         });
 
         let err = tool.execute(serde_json::json!({})).await.unwrap_err();
@@ -169,16 +188,19 @@ mod tests {
         let server_task = tokio::spawn(async move {
             // Initialize
             let req = req_rx.recv().await.unwrap();
-            resp_tx.send(JsonRpcResponse {
-                jsonrpc: "2.0".into(),
-                id: req.id,
-                result: Some(serde_json::json!({
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {"tools": {}},
-                    "serverInfo": {"name": "test", "version": "1.0"}
-                })),
-                error: None,
-            }).await.unwrap();
+            resp_tx
+                .send(JsonRpcResponse {
+                    jsonrpc: "2.0".into(),
+                    id: req.id,
+                    result: Some(serde_json::json!({
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {"tools": {}},
+                        "serverInfo": {"name": "test", "version": "1.0"}
+                    })),
+                    error: None,
+                })
+                .await
+                .unwrap();
 
             // List tools
             let req = req_rx.recv().await.unwrap();

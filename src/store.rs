@@ -102,7 +102,9 @@ impl SessionStore for InMemoryStore {
             .filter(|key| {
                 if let Some(prefix) = prefix {
                     let prefix_key = prefix.key();
-                    key.starts_with(&prefix_key) && (key.len() == prefix_key.len() || key[prefix_key.len()..].starts_with(':'))
+                    key.starts_with(&prefix_key)
+                        && (key.len() == prefix_key.len()
+                            || key[prefix_key.len()..].starts_with(':'))
                 } else {
                     true
                 }
@@ -191,9 +193,18 @@ mod tests {
     async fn in_memory_store_list_all() {
         let store = InMemoryStore::new();
 
-        store.save(&Session::new(Namespace::new("acme").child("alice"))).await.unwrap();
-        store.save(&Session::new(Namespace::new("acme").child("bob"))).await.unwrap();
-        store.save(&Session::new(Namespace::new("other"))).await.unwrap();
+        store
+            .save(&Session::new(Namespace::new("acme").child("alice")))
+            .await
+            .unwrap();
+        store
+            .save(&Session::new(Namespace::new("acme").child("bob")))
+            .await
+            .unwrap();
+        store
+            .save(&Session::new(Namespace::new("other")))
+            .await
+            .unwrap();
 
         let all = store.list(None).await.unwrap();
         assert_eq!(all.len(), 3);
@@ -203,9 +214,18 @@ mod tests {
     async fn in_memory_store_list_with_prefix() {
         let store = InMemoryStore::new();
 
-        store.save(&Session::new(Namespace::new("acme").child("alice"))).await.unwrap();
-        store.save(&Session::new(Namespace::new("acme").child("bob"))).await.unwrap();
-        store.save(&Session::new(Namespace::new("other"))).await.unwrap();
+        store
+            .save(&Session::new(Namespace::new("acme").child("alice")))
+            .await
+            .unwrap();
+        store
+            .save(&Session::new(Namespace::new("acme").child("bob")))
+            .await
+            .unwrap();
+        store
+            .save(&Session::new(Namespace::new("other")))
+            .await
+            .unwrap();
 
         let acme = Namespace::new("acme");
         let filtered = store.list(Some(&acme)).await.unwrap();
@@ -220,8 +240,14 @@ mod tests {
     async fn in_memory_store_list_prefix_no_partial_match() {
         let store = InMemoryStore::new();
 
-        store.save(&Session::new(Namespace::parse("acme:alice"))).await.unwrap();
-        store.save(&Session::new(Namespace::parse("acmeother:bob"))).await.unwrap();
+        store
+            .save(&Session::new(Namespace::parse("acme:alice")))
+            .await
+            .unwrap();
+        store
+            .save(&Session::new(Namespace::parse("acmeother:bob")))
+            .await
+            .unwrap();
 
         let acme = Namespace::new("acme");
         let filtered = store.list(Some(&acme)).await.unwrap();
@@ -250,7 +276,9 @@ mod tests {
         let ns = Namespace::new("acme").child("alice");
         let mut session = Session::new(ns);
         session.push_message(Message::user("Hello"));
-        session.metadata.insert("key".into(), serde_json::json!("value"));
+        session
+            .metadata
+            .insert("key".into(), serde_json::json!("value"));
 
         let json = serde_json::to_string(&session).unwrap();
         let deserialized: Session = serde_json::from_str(&json).unwrap();

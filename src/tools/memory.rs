@@ -80,7 +80,7 @@ impl Tool for RememberTool {
             .await
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
 
-        Ok(format!("Stored memory {}", id))
+        Ok(format!("Stored memory {id}"))
     }
 }
 
@@ -139,10 +139,7 @@ impl Tool for RecallTool {
             .and_then(|v| v.as_str())
             .ok_or_else(|| ToolError::InvalidInput("missing 'query'".into()))?;
 
-        let limit = input
-            .get("limit")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(5) as usize;
+        let limit = input.get("limit").and_then(|v| v.as_u64()).unwrap_or(5) as usize;
 
         let ns = Namespace::parse(ns_key);
 
@@ -208,9 +205,9 @@ impl Tool for ForgetTool {
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
 
         if deleted {
-            Ok(format!("Deleted memory {}.", id))
+            Ok(format!("Deleted memory {id}."))
         } else {
-            Ok(format!("Memory {} not found.", id))
+            Ok(format!("Memory {id} not found."))
         }
     }
 }
@@ -277,9 +274,15 @@ mod tests {
         assert_eq!(forget.definition().name, "forget");
 
         // All should have required fields
-        assert!(remember.definition().input_schema["required"].as_array().is_some());
-        assert!(recall.definition().input_schema["required"].as_array().is_some());
-        assert!(forget.definition().input_schema["required"].as_array().is_some());
+        assert!(remember.definition().input_schema["required"]
+            .as_array()
+            .is_some());
+        assert!(recall.definition().input_schema["required"]
+            .as_array()
+            .is_some());
+        assert!(forget.definition().input_schema["required"]
+            .as_array()
+            .is_some());
     }
 
     #[tokio::test]

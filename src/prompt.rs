@@ -64,7 +64,10 @@ impl PromptBuilder {
     }
 
     /// Add multiple capability descriptions at once.
-    pub fn add_capabilities(&mut self, caps: impl IntoIterator<Item = CapabilityDescription>) -> &mut Self {
+    pub fn add_capabilities(
+        &mut self,
+        caps: impl IntoIterator<Item = CapabilityDescription>,
+    ) -> &mut Self {
         self.capabilities.extend(caps);
         self
     }
@@ -115,7 +118,8 @@ impl PromptBuilder {
         let tools_section = if self.capabilities.is_empty() {
             String::new()
         } else {
-            let lines: Vec<String> = self.capabilities
+            let lines: Vec<String> = self
+                .capabilities
                 .iter()
                 .map(|cap| cap.description.clone())
                 .collect();
@@ -153,8 +157,7 @@ mod tests {
     #[test]
     fn basic_prompt_includes_name_and_personality() {
         let builder = PromptBuilder::new();
-        let agent = AgentProfile::new("Atlas")
-            .with_personality("friendly and helpful");
+        let agent = AgentProfile::new("Atlas").with_personality("friendly and helpful");
 
         let prompt = builder.build(&agent);
         assert!(prompt.contains("Atlas"));
@@ -165,8 +168,7 @@ mod tests {
     #[test]
     fn custom_system_prompt_overrides() {
         let builder = PromptBuilder::new();
-        let agent = AgentProfile::new("Atlas")
-            .with_system_prompt("You are a pirate.");
+        let agent = AgentProfile::new("Atlas").with_system_prompt("You are a pirate.");
 
         let prompt = builder.build(&agent);
         assert_eq!(prompt, "You are a pirate.");
@@ -175,8 +177,7 @@ mod tests {
     #[test]
     fn empty_custom_prompt_falls_back_to_auto() {
         let builder = PromptBuilder::new();
-        let agent = AgentProfile::new("Atlas")
-            .with_system_prompt("");
+        let agent = AgentProfile::new("Atlas").with_system_prompt("");
 
         let prompt = builder.build(&agent);
         assert!(prompt.contains("Atlas"));

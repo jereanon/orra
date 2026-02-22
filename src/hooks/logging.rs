@@ -50,10 +50,7 @@ impl Hook for LoggingHook {
     async fn before_provider_call(&self, request: &mut CompletionRequest) {
         let tool_count = request.tools.len();
         let msg_count = request.messages.len();
-        eprintln!(
-            "[llm] calling provider with {} messages, {} tools",
-            msg_count, tool_count
-        );
+        eprintln!("[llm] calling provider with {msg_count} messages, {tool_count} tools");
         *self.call_start.lock().await = Some(Instant::now());
     }
 
@@ -80,7 +77,11 @@ impl Hook for LoggingHook {
         );
     }
 
-    async fn before_tool_call(&self, _namespace: &Namespace, call: &mut ToolCall) -> Result<(), String> {
+    async fn before_tool_call(
+        &self,
+        _namespace: &Namespace,
+        call: &mut ToolCall,
+    ) -> Result<(), String> {
         eprintln!("[tool] calling: {}", call.name);
         Ok(())
     }
@@ -148,7 +149,7 @@ mod tests {
             name: "test_tool".into(),
             arguments: serde_json::json!({}),
         };
-        hook.before_tool_call(&ns, &mut call).await;
+        let _ = hook.before_tool_call(&ns, &mut call).await;
 
         let mut result = ToolResult {
             call_id: "c1".into(),

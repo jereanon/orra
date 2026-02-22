@@ -114,9 +114,7 @@ struct DiscordUser {
 
 impl DiscordUser {
     fn display_name(&self) -> &str {
-        self.global_name
-            .as_deref()
-            .unwrap_or(&self.username)
+        self.global_name.as_deref().unwrap_or(&self.username)
     }
 }
 
@@ -169,7 +167,7 @@ impl Tool for ListChannelsTool {
 
         let resp = self
             .dc
-            .request(reqwest::Method::GET, &format!("guilds/{}/channels", guild_id))
+            .request(reqwest::Method::GET, &format!("guilds/{guild_id}/channels"))
             .send()
             .await
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
@@ -178,25 +176,21 @@ impl Tool for ListChannelsTool {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
             return Err(ToolError::ExecutionFailed(format!(
-                "Discord API {}: {}",
-                status, body
+                "Discord API {status}: {body}"
             )));
         }
 
         let channels: Vec<Channel> = resp
             .json()
             .await
-            .map_err(|e| ToolError::ExecutionFailed(format!("parse error: {}", e)))?;
+            .map_err(|e| ToolError::ExecutionFailed(format!("parse error: {e}")))?;
 
         if channels.is_empty() {
             return Ok("No channels found in this server.".into());
         }
 
         // Group by category
-        let categories: Vec<&Channel> = channels
-            .iter()
-            .filter(|c| c.channel_type == 4)
-            .collect();
+        let categories: Vec<&Channel> = channels.iter().filter(|c| c.channel_type == 4).collect();
 
         let mut lines = Vec::new();
 
@@ -226,7 +220,7 @@ impl Tool for ListChannelsTool {
                     .topic
                     .as_deref()
                     .filter(|t| !t.is_empty())
-                    .map(|t| format!(" — {}", t))
+                    .map(|t| format!(" — {t}"))
                     .unwrap_or_default();
                 lines.push(format!(
                     "  {} {} [{}] (id: {}){}",
@@ -298,7 +292,7 @@ impl Tool for GetChannelInfoTool {
 
         let resp = self
             .dc
-            .request(reqwest::Method::GET, &format!("channels/{}", channel_id))
+            .request(reqwest::Method::GET, &format!("channels/{channel_id}"))
             .send()
             .await
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
@@ -307,15 +301,14 @@ impl Tool for GetChannelInfoTool {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
             return Err(ToolError::ExecutionFailed(format!(
-                "Discord API {}: {}",
-                status, body
+                "Discord API {status}: {body}"
             )));
         }
 
         let ch: Channel = resp
             .json()
             .await
-            .map_err(|e| ToolError::ExecutionFailed(format!("parse error: {}", e)))?;
+            .map_err(|e| ToolError::ExecutionFailed(format!("parse error: {e}")))?;
 
         let topic = ch
             .topic
@@ -384,7 +377,10 @@ impl Tool for GetMessagesTool {
 
         let mut req = self
             .dc
-            .request(reqwest::Method::GET, &format!("channels/{}/messages", channel_id))
+            .request(
+                reqwest::Method::GET,
+                &format!("channels/{channel_id}/messages"),
+            )
             .query(&[("limit", &limit.to_string())]);
 
         if let Some(before) = input.get("before").and_then(|v| v.as_str()) {
@@ -400,15 +396,14 @@ impl Tool for GetMessagesTool {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
             return Err(ToolError::ExecutionFailed(format!(
-                "Discord API {}: {}",
-                status, body
+                "Discord API {status}: {body}"
             )));
         }
 
         let messages: Vec<DiscordMessage> = resp
             .json()
             .await
-            .map_err(|e| ToolError::ExecutionFailed(format!("parse error: {}", e)))?;
+            .map_err(|e| ToolError::ExecutionFailed(format!("parse error: {e}")))?;
 
         if messages.is_empty() {
             return Ok("No messages found in this channel.".into());
@@ -489,7 +484,10 @@ impl Tool for SendMessageTool {
 
         let resp = self
             .dc
-            .request(reqwest::Method::POST, &format!("channels/{}/messages", channel_id))
+            .request(
+                reqwest::Method::POST,
+                &format!("channels/{channel_id}/messages"),
+            )
             .json(&serde_json::json!({ "content": content }))
             .send()
             .await
@@ -499,17 +497,19 @@ impl Tool for SendMessageTool {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
             return Err(ToolError::ExecutionFailed(format!(
-                "Discord API {}: {}",
-                status, body
+                "Discord API {status}: {body}"
             )));
         }
 
         let msg: DiscordMessage = resp
             .json()
             .await
-            .map_err(|e| ToolError::ExecutionFailed(format!("parse error: {}", e)))?;
+            .map_err(|e| ToolError::ExecutionFailed(format!("parse error: {e}")))?;
 
-        Ok(format!("Sent message {} in channel {}.", msg.id, channel_id))
+        Ok(format!(
+            "Sent message {} in channel {}.",
+            msg.id, channel_id
+        ))
     }
 }
 
@@ -574,7 +574,10 @@ impl Tool for ReplyToMessageTool {
 
         let resp = self
             .dc
-            .request(reqwest::Method::POST, &format!("channels/{}/messages", channel_id))
+            .request(
+                reqwest::Method::POST,
+                &format!("channels/{channel_id}/messages"),
+            )
             .json(&serde_json::json!({
                 "content": content,
                 "message_reference": {
@@ -589,15 +592,14 @@ impl Tool for ReplyToMessageTool {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
             return Err(ToolError::ExecutionFailed(format!(
-                "Discord API {}: {}",
-                status, body
+                "Discord API {status}: {body}"
             )));
         }
 
         let msg: DiscordMessage = resp
             .json()
             .await
-            .map_err(|e| ToolError::ExecutionFailed(format!("parse error: {}", e)))?;
+            .map_err(|e| ToolError::ExecutionFailed(format!("parse error: {e}")))?;
 
         Ok(format!(
             "Replied to message {} with message {} in channel {}.",
@@ -645,7 +647,7 @@ impl Tool for GetGuildInfoTool {
             .dc
             .request(
                 reqwest::Method::GET,
-                &format!("guilds/{}?with_counts=true", guild_id),
+                &format!("guilds/{guild_id}?with_counts=true"),
             )
             .send()
             .await
@@ -655,19 +657,18 @@ impl Tool for GetGuildInfoTool {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
             return Err(ToolError::ExecutionFailed(format!(
-                "Discord API {}: {}",
-                status, body
+                "Discord API {status}: {body}"
             )));
         }
 
         let guild: Guild = resp
             .json()
             .await
-            .map_err(|e| ToolError::ExecutionFailed(format!("parse error: {}", e)))?;
+            .map_err(|e| ToolError::ExecutionFailed(format!("parse error: {e}")))?;
 
         let members = guild
             .approximate_member_count
-            .map(|c| format!("\nmembers: ~{}", c))
+            .map(|c| format!("\nmembers: ~{c}"))
             .unwrap_or_default();
 
         Ok(format!(

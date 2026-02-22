@@ -18,7 +18,7 @@ impl Default for CharEstimator {
 
 impl Tokenizer for CharEstimator {
     fn count_tokens(&self, text: &str) -> usize {
-        (text.len() + self.chars_per_token - 1) / self.chars_per_token
+        text.len().div_ceil(self.chars_per_token)
     }
 }
 
@@ -83,7 +83,10 @@ impl<T: Tokenizer> ContextWindow<T> {
     }
 
     pub fn estimate_total_tokens(&self, messages: &[Message]) -> usize {
-        messages.iter().map(|m| self.estimate_message_tokens(m)).sum()
+        messages
+            .iter()
+            .map(|m| self.estimate_message_tokens(m))
+            .sum()
     }
 
     pub fn is_over_budget(&self, messages: &[Message]) -> bool {
@@ -151,7 +154,9 @@ impl<T: Tokenizer> ContextWindow<T> {
 
         // Try to cut at a newline boundary for cleaner output
         let truncated = &content[..keep_chars.min(content.len())];
-        let cut_point = truncated.rfind('\n').unwrap_or(keep_chars.min(content.len()));
+        let cut_point = truncated
+            .rfind('\n')
+            .unwrap_or(keep_chars.min(content.len()));
 
         format!(
             "{}\n\n[truncated — original was {} tokens, limit is {}]",
@@ -218,10 +223,7 @@ mod tests {
     #[test]
     fn estimate_total_tokens() {
         let window = test_window();
-        let messages = vec![
-            Message::system("You are helpful."),
-            Message::user("Hi"),
-        ];
+        let messages = vec![Message::system("You are helpful."), Message::user("Hi")];
         let total = window.estimate_total_tokens(&messages);
         // system: ceil(16/4) + 4 = 8, user: ceil(2/4) + 4 = 5
         assert_eq!(total, 13);
@@ -236,7 +238,7 @@ mod tests {
 
         // Create enough messages to exceed 80 tokens
         let large: Vec<Message> = (0..20)
-            .map(|i| Message::user(format!("This is message number {} with some content", i)))
+            .map(|i| Message::user(format!("This is message number {i} with some content")))
             .collect();
         assert!(window.is_over_budget(&large));
     }
@@ -252,10 +254,7 @@ mod tests {
     #[test]
     fn truncate_to_fit_no_truncation_needed() {
         let window = test_window();
-        let messages = vec![
-            Message::system("Be helpful."),
-            Message::user("Hello"),
-        ];
+        let messages = vec![Message::system("Be helpful."), Message::user("Hello")];
         let result = window.truncate_to_fit(&messages);
         assert_eq!(result.len(), 2);
     }
@@ -273,12 +272,12 @@ mod tests {
 
         // Budget: 40 tokens available
         let messages = vec![
-            Message::system("System"),                   // ~6 tokens
-            Message::user("Old message one"),            // ~8 tokens
-            Message::user("Old message two"),            // ~8 tokens
-            Message::assistant("Old response"),          // ~7 tokens
-            Message::user("Recent message"),             // ~8 tokens
-            Message::user("What should I do?"),          // ~9 tokens
+            Message::system("System"),          // ~6 tokens
+            Message::user("Old message one"),   // ~8 tokens
+            Message::user("Old message two"),   // ~8 tokens
+            Message::assistant("Old response"), // ~7 tokens
+            Message::user("Recent message"),    // ~8 tokens
+            Message::user("What should I do?"), // ~9 tokens
         ];
 
         let result = window.truncate_to_fit(&messages);
@@ -303,10 +302,7 @@ mod tests {
             },
         );
 
-        let messages = vec![
-            Message::system("S"),
-            Message::user("U"),
-        ];
+        let messages = vec![Message::system("S"), Message::user("U")];
 
         // Even if over budget, we keep both when there are only 2
         let result = window.truncate_to_fit(&messages);

@@ -105,11 +105,8 @@ impl Tool for ExecTool {
             cmd.current_dir(dir);
         }
 
-        let result = tokio::time::timeout(
-            std::time::Duration::from_secs(timeout),
-            cmd.output(),
-        )
-        .await;
+        let result =
+            tokio::time::timeout(std::time::Duration::from_secs(timeout), cmd.output()).await;
 
         match result {
             Ok(Ok(output)) => {
@@ -136,7 +133,7 @@ impl Tool for ExecTool {
                 }
 
                 if exit_code != 0 {
-                    result.push_str(&format!("\n[exit code: {}]", exit_code));
+                    result.push_str(&format!("\n[exit code: {exit_code}]"));
                 }
 
                 // Truncate very long output
@@ -149,19 +146,21 @@ impl Tool for ExecTool {
                 Ok(result)
             }
             Ok(Err(e)) => Err(ToolError::ExecutionFailed(format!(
-                "failed to run command: {}",
-                e
+                "failed to run command: {e}"
             ))),
             Err(_) => Err(ToolError::ExecutionFailed(format!(
-                "command timed out after {} seconds",
-                timeout
+                "command timed out after {timeout} seconds"
             ))),
         }
     }
 }
 
 /// Register the exec tool into a registry.
-pub fn register_tool(registry: &mut ToolRegistry, allowed_commands: Vec<String>, timeout_secs: u64) {
+pub fn register_tool(
+    registry: &mut ToolRegistry,
+    allowed_commands: Vec<String>,
+    timeout_secs: u64,
+) {
     registry.register(Box::new(ExecTool::new(allowed_commands, timeout_secs)));
 }
 

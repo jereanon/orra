@@ -122,16 +122,14 @@ impl CronJob {
                         let mut next = last + interval;
                         // If we're behind, fast-forward
                         while next <= from {
-                            next = next + interval;
+                            next += interval;
                         }
                         Some(next)
                     }
                     None => Some(from + interval),
                 }
             }
-            CronScheduleType::Cron { expression } => {
-                compute_next_cron_time(expression, from)
-            }
+            CronScheduleType::Cron { expression } => compute_next_cron_time(expression, from),
         }
     }
 
@@ -169,8 +167,7 @@ fn compute_next_cron_time(expression: &str, from: DateTime<Utc>) -> Option<DateT
     let schedule = CronSchedule::parse(expression).ok()?;
 
     // Start from the next minute boundary
-    let start = from
-        .with_nanosecond(0)?;
+    let start = from.with_nanosecond(0)?;
     let start = start + chrono::Duration::minutes(1);
     let start = start.with_nanosecond(0)?;
 
@@ -181,7 +178,7 @@ fn compute_next_cron_time(expression: &str, from: DateTime<Utc>) -> Option<DateT
         if schedule.matches(&candidate) {
             return Some(candidate);
         }
-        candidate = candidate + chrono::Duration::minutes(1);
+        candidate += chrono::Duration::minutes(1);
     }
 
     None
@@ -198,7 +195,9 @@ mod tests {
         let job = CronJob::new(
             "test",
             CronScheduleType::At { datetime: future },
-            CronPayload::AgentTurn { prompt: "hello".into() },
+            CronPayload::AgentTurn {
+                prompt: "hello".into(),
+            },
             "test-ns",
         );
         assert_eq!(job.status, CronJobStatus::Active);
@@ -212,7 +211,9 @@ mod tests {
         let job = CronJob::new(
             "test",
             CronScheduleType::At { datetime: past },
-            CronPayload::AgentTurn { prompt: "hello".into() },
+            CronPayload::AgentTurn {
+                prompt: "hello".into(),
+            },
             "test-ns",
         );
         assert!(job.next_run.is_none());
@@ -223,7 +224,9 @@ mod tests {
         let job = CronJob::new(
             "test",
             CronScheduleType::Every { interval_ms: 60000 },
-            CronPayload::SystemEvent { message: "tick".into() },
+            CronPayload::SystemEvent {
+                message: "tick".into(),
+            },
             "test-ns",
         );
         assert!(job.next_run.is_some());
@@ -245,7 +248,9 @@ mod tests {
         let mut job = CronJob::new(
             "once",
             CronScheduleType::At { datetime: future },
-            CronPayload::AgentTurn { prompt: "go".into() },
+            CronPayload::AgentTurn {
+                prompt: "go".into(),
+            },
             "ns",
         );
         job.mark_fired(future);
@@ -259,7 +264,9 @@ mod tests {
         let mut job = CronJob::new(
             "repeat",
             CronScheduleType::Every { interval_ms: 60000 },
-            CronPayload::SystemEvent { message: "tick".into() },
+            CronPayload::SystemEvent {
+                message: "tick".into(),
+            },
             "ns",
         );
         let now = Utc::now();
@@ -275,7 +282,9 @@ mod tests {
         let mut job = CronJob::new(
             "paused",
             CronScheduleType::Every { interval_ms: 1 },
-            CronPayload::SystemEvent { message: "nope".into() },
+            CronPayload::SystemEvent {
+                message: "nope".into(),
+            },
             "ns",
         );
         job.status = CronJobStatus::Paused;
@@ -286,8 +295,12 @@ mod tests {
     fn serialization_roundtrip() {
         let job = CronJob::new(
             "test",
-            CronScheduleType::Cron { expression: "*/5 * * * *".into() },
-            CronPayload::AgentTurn { prompt: "check weather".into() },
+            CronScheduleType::Cron {
+                expression: "*/5 * * * *".into(),
+            },
+            CronPayload::AgentTurn {
+                prompt: "check weather".into(),
+            },
             "discord:123",
         );
         let json = serde_json::to_string_pretty(&job).unwrap();

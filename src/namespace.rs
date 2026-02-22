@@ -91,9 +91,7 @@ mod tests {
 
     #[test]
     fn nested_children() {
-        let ns = Namespace::new("acme")
-            .child("alice")
-            .child("support");
+        let ns = Namespace::new("acme").child("alice").child("support");
         assert_eq!(ns.depth(), 3);
         assert_eq!(ns.key(), "acme:alice:support");
     }
@@ -152,7 +150,7 @@ mod tests {
     #[test]
     fn display_trait() {
         let ns = Namespace::new("acme").child("alice");
-        assert_eq!(format!("{}", ns), "acme:alice");
+        assert_eq!(format!("{ns}"), "acme:alice");
     }
 
     #[test]

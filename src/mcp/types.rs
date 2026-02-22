@@ -159,7 +159,8 @@ mod tests {
 
     #[test]
     fn json_rpc_response_with_error() {
-        let json = r#"{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"Method not found"}}"#;
+        let json =
+            r#"{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"Method not found"}}"#;
         let resp: JsonRpcResponse = serde_json::from_str(json).unwrap();
         assert!(resp.result.is_none());
         let err = resp.error.unwrap();
@@ -206,8 +207,12 @@ mod tests {
     fn mcp_tool_result_text_extraction() {
         let result = McpToolResult {
             content: vec![
-                McpContent::Text { text: "line 1".into() },
-                McpContent::Text { text: "line 2".into() },
+                McpContent::Text {
+                    text: "line 1".into(),
+                },
+                McpContent::Text {
+                    text: "line 2".into(),
+                },
             ],
             is_error: false,
         };

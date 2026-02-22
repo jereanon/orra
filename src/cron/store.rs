@@ -98,11 +98,11 @@ impl FileCronStore {
         let data = match tokio::fs::read_to_string(&path).await {
             Ok(s) => s,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-            Err(e) => return Err(CronStoreError::Storage(format!("read error: {}", e))),
+            Err(e) => return Err(CronStoreError::Storage(format!("read error: {e}"))),
         };
 
         let jobs: Vec<CronJob> = serde_json::from_str(&data)
-            .map_err(|e| CronStoreError::Storage(format!("deserialize error: {}", e)))?;
+            .map_err(|e| CronStoreError::Storage(format!("deserialize error: {e}")))?;
 
         let mut cache = self.cache.write().await;
         cache.clear();
@@ -119,23 +119,23 @@ impl FileCronStore {
         let jobs: Vec<&CronJob> = cache.values().collect();
 
         let json = serde_json::to_string_pretty(&jobs)
-            .map_err(|e| CronStoreError::Storage(format!("serialize error: {}", e)))?;
+            .map_err(|e| CronStoreError::Storage(format!("serialize error: {e}")))?;
 
         // Ensure parent directory exists
         if let Some(parent) = self.path.parent() {
             tokio::fs::create_dir_all(parent)
                 .await
-                .map_err(|e| CronStoreError::Storage(format!("mkdir error: {}", e)))?;
+                .map_err(|e| CronStoreError::Storage(format!("mkdir error: {e}")))?;
         }
 
         // Atomic write: write to tmp, then rename
         let tmp_path = self.path.with_extension("tmp");
         tokio::fs::write(&tmp_path, &json)
             .await
-            .map_err(|e| CronStoreError::Storage(format!("write error: {}", e)))?;
+            .map_err(|e| CronStoreError::Storage(format!("write error: {e}")))?;
         tokio::fs::rename(&tmp_path, &self.path)
             .await
-            .map_err(|e| CronStoreError::Storage(format!("rename error: {}", e)))?;
+            .map_err(|e| CronStoreError::Storage(format!("rename error: {e}")))?;
 
         Ok(())
     }
@@ -178,7 +178,9 @@ mod tests {
         CronJob::new(
             name,
             CronScheduleType::Every { interval_ms: 60000 },
-            CronPayload::SystemEvent { message: "tick".into() },
+            CronPayload::SystemEvent {
+                message: "tick".into(),
+            },
             "test",
         )
     }

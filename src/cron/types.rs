@@ -63,6 +63,10 @@ pub struct CronJob {
     /// instead of the default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// Optional max turns override. If set, the cron job uses this limit
+    /// instead of the runtime default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_turns: Option<usize>,
     /// Current status.
     pub status: CronJobStatus,
     /// When the job was created.
@@ -92,6 +96,7 @@ impl CronJob {
             delivery: CronDelivery::default(),
             namespace: namespace.into(),
             model: None,
+            max_turns: None,
             status: CronJobStatus::Active,
             created_at: now,
             last_run: None,

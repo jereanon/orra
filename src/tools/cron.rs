@@ -95,6 +95,10 @@ impl Tool for CronTool {
                     "namespace": {
                         "type": "string",
                         "description": "The namespace/channel this job belongs to (required for create)"
+                    },
+                    "max_turns": {
+                        "type": "integer",
+                        "description": "Maximum number of agent turns for this job (default: uses runtime setting, typically 10)"
                     }
                 },
                 "required": ["action"]
@@ -137,7 +141,11 @@ impl CronTool {
         let schedule = parse_schedule(input)?;
         let payload = parse_payload(input)?;
 
-        let job = CronJob::new(name, schedule, payload, namespace);
+        let mut job = CronJob::new(name, schedule, payload, namespace);
+        job.max_turns = input
+            .get("max_turns")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize);
         let job = self
             .service
             .add_job(job)

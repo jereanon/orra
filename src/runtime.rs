@@ -128,15 +128,16 @@ impl<T: Tokenizer> Runtime<T> {
         namespace: &Namespace,
         user_message: Message,
     ) -> Result<RunResult, RuntimeError> {
-        self.run_with_model(namespace, user_message, None).await
+        self.run_with_model(namespace, user_message, None, None).await
     }
 
-    /// Run the agent loop with an optional model override.
+    /// Run the agent loop with optional model and max-turns overrides.
     pub async fn run_with_model(
         &self,
         namespace: &Namespace,
         user_message: Message,
         model: Option<String>,
+        max_turns: Option<usize>,
     ) -> Result<RunResult, RuntimeError> {
         let mut session = self
             .store
@@ -152,8 +153,9 @@ impl<T: Tokenizer> Runtime<T> {
 
         let mut turns = Vec::new();
         let mut total_usage = Usage::default();
+        let effective_max_turns = max_turns.unwrap_or(self.config.max_turns);
 
-        for _ in 0..self.config.max_turns {
+        for _ in 0..effective_max_turns {
             let messages = self.build_messages(&session);
             let all_defs = self.tools.definitions();
             let policy = self.policies.resolve(namespace);
@@ -216,7 +218,7 @@ impl<T: Tokenizer> Runtime<T> {
             .dispatch_before_session_save(namespace, &mut session)
             .await;
         self.store.save(&session).await?;
-        Err(RuntimeError::MaxTurnsExceeded(self.config.max_turns))
+        Err(RuntimeError::MaxTurnsExceeded(effective_max_turns))
     }
 
     /// Run the agent loop with streaming, emitting events as they happen.

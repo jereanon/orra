@@ -86,9 +86,13 @@ impl Tool for WebFetchTool {
             .unwrap_or("")
             .to_string();
 
-        let body = resp
-            .text()
+        // Read the response body with an explicit timeout so a stalled
+        // connection cannot block the runtime indefinitely.
+        let body = tokio::time::timeout(std::time::Duration::from_secs(30), resp.text())
             .await
+            .map_err(|_| {
+                ToolError::ExecutionFailed("timed out reading response body".into())
+            })?
             .map_err(|e| ToolError::ExecutionFailed(format!("read error: {e}")))?;
 
         // Simple HTML-to-text extraction
@@ -98,14 +102,13 @@ impl Tool for WebFetchTool {
             body
         };
 
-        // Truncate if needed
-        let text = if text.len() > max_length {
-            let truncated = &text[..max_length];
+        // Truncate if needed (use char count to avoid slicing mid-codepoint)
+        let char_count = text.chars().count();
+        let text = if char_count > max_length {
+            let truncated: String = text.chars().take(max_length).collect();
             format!(
                 "{}\n\n[Truncated — {} of {} characters shown]",
-                truncated,
-                max_length,
-                text.len()
+                truncated, max_length, char_count
             )
         } else {
             text
@@ -122,37 +125,64 @@ pub fn register_tool(registry: &mut ToolRegistry) {
 
 /// Very basic HTML tag stripping. Removes tags, decodes common entities,
 /// and collapses excessive whitespace.
+///
+/// All indexing is done on char slices to avoid byte/char offset mismatches
+/// that cause panics on pages with multi-byte UTF-8 characters.
 fn strip_html(html: &str) -> String {
     let mut result = String::with_capacity(html.len());
     let mut in_tag = false;
     let mut in_script = false;
     let mut in_style = false;
 
-    let lower = html.to_lowercase();
     let chars: Vec<char> = html.chars().collect();
-    let lower_chars: Vec<char> = lower.chars().collect();
+    let lower_chars: Vec<char> = html.to_lowercase().chars().collect();
     let len = chars.len();
     let mut i = 0;
 
+    /// Check whether `slice[pos..]` starts with the given pattern (chars).
+    #[inline]
+    fn chars_start_with(slice: &[char], pos: usize, pattern: &[char]) -> bool {
+        if pos + pattern.len() > slice.len() {
+            return false;
+        }
+        slice[pos..pos + pattern.len()] == *pattern
+    }
+
     while i < len {
-        if !in_tag && i + 7 < len && &lower[i..i + 7] == "<script" {
+        // Detect <script…> opening
+        if !in_tag && chars_start_with(&lower_chars, i, &['<', 's', 'c', 'r', 'i', 'p', 't']) {
             in_script = true;
             in_tag = true;
             i += 1;
             continue;
         }
-        if in_script && i + 9 <= len && &lower[i..i + 9] == "</script>" {
+        // Detect </script>
+        if in_script
+            && chars_start_with(
+                &lower_chars,
+                i,
+                &['<', '/', 's', 'c', 'r', 'i', 'p', 't', '>'],
+            )
+        {
             in_script = false;
             i += 9;
             continue;
         }
-        if !in_tag && i + 6 < len && &lower[i..i + 6] == "<style" {
+        // Detect <style…> opening
+        if !in_tag && chars_start_with(&lower_chars, i, &['<', 's', 't', 'y', 'l', 'e']) {
             in_style = true;
             in_tag = true;
             i += 1;
             continue;
         }
-        if in_style && i + 8 <= len && &lower[i..i + 8] == "</style>" {
+        // Detect </style>
+        if in_style
+            && chars_start_with(
+                &lower_chars,
+                i,
+                &['<', '/', 's', 't', 'y', 'l', 'e', '>'],
+            )
+        {
             in_style = false;
             i += 8;
             continue;
@@ -274,5 +304,29 @@ mod tests {
         let tool = WebFetchTool::new();
         let err = tool.execute(serde_json::json!({})).await.unwrap_err();
         assert!(matches!(err, ToolError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn strip_html_multibyte_utf8() {
+        // Contains multi-byte chars (Japanese, emoji) that previously caused
+        // panics due to byte/char index mismatch.
+        let html = "<p>Hello こんにちは 🌍</p><script>var x = '日本語';</script><p>End</p>";
+        let text = strip_html(html);
+        assert!(text.contains("Hello こんにちは 🌍"));
+        assert!(text.contains("End"));
+        assert!(!text.contains("var x"));
+    }
+
+    #[test]
+    fn strip_html_multibyte_in_script_and_style() {
+        let html = "<style>.café { color: red; }</style>\
+                     <div>Ñoño</div>\
+                     <script>let ñ = 'über';</script>\
+                     <p>après</p>";
+        let text = strip_html(html);
+        assert!(text.contains("Ñoño"));
+        assert!(text.contains("après"));
+        assert!(!text.contains("café"));
+        assert!(!text.contains("über"));
     }
 }

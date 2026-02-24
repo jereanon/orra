@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -30,6 +31,14 @@ pub struct Message {
     pub tool_calls: Vec<ToolCall>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tool_results: Vec<ToolResult>,
+    /// When this message was created. Defaults to epoch for messages
+    /// deserialized from sessions that predate this field.
+    #[serde(default = "default_timestamp")]
+    pub timestamp: DateTime<Utc>,
+}
+
+fn default_timestamp() -> DateTime<Utc> {
+    DateTime::UNIX_EPOCH
 }
 
 impl Message {
@@ -39,6 +48,7 @@ impl Message {
             content: content.into(),
             tool_calls: vec![],
             tool_results: vec![],
+            timestamp: Utc::now(),
         }
     }
 
@@ -48,6 +58,7 @@ impl Message {
             content: content.into(),
             tool_calls: vec![],
             tool_results: vec![],
+            timestamp: Utc::now(),
         }
     }
 
@@ -57,6 +68,7 @@ impl Message {
             content: content.into(),
             tool_calls: vec![],
             tool_results: vec![],
+            timestamp: Utc::now(),
         }
     }
 
@@ -69,6 +81,7 @@ impl Message {
             content: content.into(),
             tool_calls,
             tool_results: vec![],
+            timestamp: Utc::now(),
         }
     }
 
@@ -78,6 +91,7 @@ impl Message {
             content: String::new(),
             tool_calls: vec![],
             tool_results: results,
+            timestamp: Utc::now(),
         }
     }
 }

@@ -99,6 +99,10 @@ impl Tool for CronTool {
                     "max_turns": {
                         "type": "integer",
                         "description": "Maximum number of agent turns for this job (default: uses runtime setting, typically 10)"
+                    },
+                    "auto_approve": {
+                        "type": "boolean",
+                        "description": "When true, tool calls are auto-approved for this job without requiring user confirmation"
                     }
                 },
                 "required": ["action"]
@@ -146,6 +150,9 @@ impl CronTool {
             .get("max_turns")
             .and_then(|v| v.as_u64())
             .map(|v| v as usize);
+        job.auto_approve = input
+            .get("auto_approve")
+            .and_then(|v| v.as_bool());
         let job = self
             .service
             .add_job(job)

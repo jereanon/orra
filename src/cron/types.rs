@@ -67,6 +67,10 @@ pub struct CronJob {
     /// instead of the runtime default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_turns: Option<usize>,
+    /// When true, tool calls are auto-approved (chaos mode) for this job,
+    /// regardless of the session's chaos_mode setting.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_approve: Option<bool>,
     /// Current status.
     pub status: CronJobStatus,
     /// When the job was created.
@@ -97,6 +101,7 @@ impl CronJob {
             namespace: namespace.into(),
             model: None,
             max_turns: None,
+            auto_approve: None,
             status: CronJobStatus::Active,
             created_at: now,
             last_run: None,

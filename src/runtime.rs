@@ -193,6 +193,16 @@ impl<T: Tokenizer> Runtime<T> {
                     response,
                     tool_results,
                 });
+
+                // Save intermediate progress so callers (and hooks) can
+                // observe partial results while the agent loop is still
+                // running.  This is especially important for long-running
+                // tasks (e.g. cron jobs) where the UI should reflect each
+                // turn as it completes.
+                self.hooks
+                    .dispatch_before_session_save(namespace, &mut session)
+                    .await;
+                self.store.save(&session).await?;
             } else {
                 let final_message = response.message.clone();
                 turns.push(TurnResult {

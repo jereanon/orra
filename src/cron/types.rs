@@ -71,6 +71,15 @@ pub struct CronJob {
     /// regardless of the session's chaos_mode setting.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_approve: Option<bool>,
+    /// When true, run a single LLM call with no tools (cheap triage mode).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lightweight: Option<bool>,
+    /// Minimum seconds between consecutive fires of this job.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cooldown_secs: Option<u64>,
+    /// Maximum simultaneous runs of this job. Skips if already at limit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_concurrent: Option<u32>,
     /// Current status.
     pub status: CronJobStatus,
     /// When the job was created.
@@ -102,6 +111,9 @@ impl CronJob {
             model: None,
             max_turns: None,
             auto_approve: None,
+            lightweight: None,
+            cooldown_secs: None,
+            max_concurrent: None,
             status: CronJobStatus::Active,
             created_at: now,
             last_run: None,
@@ -144,9 +156,18 @@ impl CronJob {
     }
 
     /// Returns true if this job should fire at the given time.
+    /// Respects cooldown: if `cooldown_secs` is set, the job won't fire
+    /// until that many seconds after the last run.
     pub fn should_fire(&self, now: DateTime<Utc>) -> bool {
         if self.status != CronJobStatus::Active {
             return false;
+        }
+        // Cooldown check
+        if let (Some(cooldown), Some(last)) = (self.cooldown_secs, self.last_run) {
+            let elapsed = (now - last).num_seconds();
+            if elapsed < cooldown as i64 {
+                return false;
+            }
         }
         match self.next_run {
             Some(next) => now >= next,

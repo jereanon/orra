@@ -171,7 +171,24 @@ impl<T: Tokenizer> Runtime<T> {
 
             self.hooks.dispatch_before_provider_call(&mut request).await;
 
-            let response = self.provider.complete(request).await?;
+            let response = match self.provider.complete(request.clone()).await {
+                Ok(r) => r,
+                Err(ProviderError::ContextLengthExceeded(reason)) => {
+                    // Auto-compact: drop middle messages and retry once.
+                    eprintln!(
+                        "[runtime] Context length exceeded ({}), compacting and retrying…",
+                        reason
+                    );
+                    let compacted = self.context_window.truncate_to_fit(&request.messages);
+                    if compacted.len() == request.messages.len() {
+                        // Truncation couldn't help — propagate the error.
+                        return Err(ProviderError::ContextLengthExceeded(reason).into());
+                    }
+                    request.messages = compacted;
+                    self.provider.complete(request).await?
+                }
+                Err(e) => return Err(e.into()),
+            };
 
             self.hooks.dispatch_after_provider_call(&response).await;
 
@@ -229,6 +246,63 @@ impl<T: Tokenizer> Runtime<T> {
             .await;
         self.store.save(&session).await?;
         Err(RuntimeError::MaxTurnsExceeded(effective_max_turns))
+    }
+
+    /// Run a single LLM call with no tools (lightweight mode).
+    /// Useful for cheap triage, simple checks, or routing decisions.
+    pub async fn run_lightweight(
+        &self,
+        namespace: &Namespace,
+        user_message: Message,
+        model: Option<String>,
+    ) -> Result<RunResult, RuntimeError> {
+        let mut session = self
+            .store
+            .load(namespace)
+            .await?
+            .unwrap_or_else(|| Session::new(namespace.clone()));
+
+        self.hooks
+            .dispatch_after_session_load(namespace, &session)
+            .await;
+
+        session.push_message(user_message);
+
+        let messages = self.build_messages(&session);
+
+        let mut request = CompletionRequest {
+            messages,
+            tools: vec![], // no tools in lightweight mode
+            max_tokens: self.config.max_tokens,
+            temperature: self.config.temperature,
+            model,
+        };
+
+        self.hooks.dispatch_before_provider_call(&mut request).await;
+
+        let response = self.provider.complete(request).await?;
+
+        self.hooks.dispatch_after_provider_call(&response).await;
+
+        let final_message = response.message.clone();
+        let total_usage = response.usage.clone();
+        session.push_message(response.message.clone());
+
+        let turns = vec![TurnResult {
+            response,
+            tool_results: vec![],
+        }];
+
+        self.hooks
+            .dispatch_before_session_save(namespace, &mut session)
+            .await;
+        self.store.save(&session).await?;
+
+        Ok(RunResult {
+            final_message,
+            turns,
+            total_usage,
+        })
     }
 
     /// Run the agent loop with streaming, emitting events as they happen.

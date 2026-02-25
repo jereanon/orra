@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use chrono::Utc;
@@ -16,6 +17,8 @@ pub struct CronService {
     store: Arc<dyn CronStore>,
     callback: Arc<RwLock<Option<CronCallback>>>,
     running: Arc<tokio::sync::watch::Sender<bool>>,
+    /// Tracks how many concurrent runs exist per job ID.
+    running_counts: Arc<RwLock<HashMap<String, u32>>>,
 }
 
 impl CronService {
@@ -25,7 +28,33 @@ impl CronService {
             store,
             callback: Arc::new(RwLock::new(None)),
             running: Arc::new(tx),
+            running_counts: Arc::new(RwLock::new(HashMap::new())),
         }
+    }
+
+    /// Increment the running count for a job. Returns the new count.
+    pub async fn increment_running(&self, job_id: &str) -> u32 {
+        let mut counts = self.running_counts.write().await;
+        let count = counts.entry(job_id.to_string()).or_insert(0);
+        *count += 1;
+        *count
+    }
+
+    /// Decrement the running count for a job.
+    pub async fn decrement_running(&self, job_id: &str) {
+        let mut counts = self.running_counts.write().await;
+        if let Some(count) = counts.get_mut(job_id) {
+            *count = count.saturating_sub(1);
+            if *count == 0 {
+                counts.remove(job_id);
+            }
+        }
+    }
+
+    /// Get the current running count for a job.
+    pub async fn running_count(&self, job_id: &str) -> u32 {
+        let counts = self.running_counts.read().await;
+        counts.get(job_id).copied().unwrap_or(0)
     }
 
     /// Set the callback that gets invoked when a job fires.
@@ -90,6 +119,7 @@ impl CronService {
         let _ = self.running.send(true);
         let store = self.store.clone();
         let callback = self.callback.clone();
+        let running_counts = self.running_counts.clone();
         let mut rx = self.running.subscribe();
 
         let handle = tokio::spawn(async move {
@@ -113,6 +143,19 @@ impl CronService {
                         for mut job in jobs {
                             if !job.should_fire(now) {
                                 continue;
+                            }
+
+                            // Check max_concurrent limit
+                            if let Some(max) = job.max_concurrent {
+                                let current = running_counts.read().await
+                                    .get(&job.id).copied().unwrap_or(0);
+                                if current >= max {
+                                    eprintln!(
+                                        "[cron] Skipping job '{}' — {current}/{max} concurrent runs",
+                                        job.name
+                                    );
+                                    continue;
+                                }
                             }
 
                             eprintln!("[cron] Firing job '{}' (id: {})", job.name, job.id);

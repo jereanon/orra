@@ -10,9 +10,34 @@ pub struct ToolDefinition {
     pub input_schema: serde_json::Value,
 }
 
+/// Controls whether a tool call requires user approval.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApprovalRequirement {
+    /// Never ask for approval, even when the session has approval enabled.
+    Never,
+    /// Ask for approval unless auto-approve / chaos mode is active.
+    UnlessAutoApproved,
+    /// Always ask — cannot be bypassed by chaos mode.
+    Always,
+}
+
+impl Default for ApprovalRequirement {
+    fn default() -> Self {
+        Self::UnlessAutoApproved
+    }
+}
+
 #[async_trait]
 pub trait Tool: Send + Sync {
     fn definition(&self) -> ToolDefinition;
+
+    /// Determine the approval requirement for a specific invocation.
+    /// Tools can inspect the arguments to decide severity, e.g.
+    /// `exec("ls")` → `Never`, `exec("rm -rf /")` → `Always`.
+    fn approval_requirement(&self, _args: &serde_json::Value) -> ApprovalRequirement {
+        ApprovalRequirement::default()
+    }
 
     async fn execute(&self, input: serde_json::Value) -> Result<String, ToolError>;
 }

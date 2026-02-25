@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use tokio::sync::{mpsc, oneshot, RwLock};
 
@@ -5,15 +7,24 @@ use crate::hook::Hook;
 use crate::message::ToolCall;
 use crate::namespace::Namespace;
 use crate::store::Session;
+use crate::tool::ApprovalRequirement;
 
 #[cfg(feature = "discord")]
 use crate::tools::discord::DiscordConfig;
+
+/// Callback that resolves a tool name + arguments to an `ApprovalRequirement`.
+/// Typically wraps the tool registry so the hook can ask each tool for its
+/// parameter-aware approval level.
+pub type RequirementLookup =
+    Arc<dyn Fn(&str, &serde_json::Value) -> ApprovalRequirement + Send + Sync>;
 
 /// A pending approval request sent from the hook to the UI handler.
 pub struct ApprovalRequest {
     pub call_id: String,
     pub tool_name: String,
     pub arguments: serde_json::Value,
+    /// The approval level declared by the tool for this invocation.
+    pub requirement: ApprovalRequirement,
     /// The hook blocks on the receiver side of this channel until the
     /// UI handler sends `true` (approved) or `false` (denied).
     pub response_tx: oneshot::Sender<bool>,
@@ -33,6 +44,8 @@ pub struct ApprovalHook {
     request_tx: mpsc::Sender<ApprovalRequest>,
     /// Per-session chaos mode flag, read from session metadata.
     chaos_mode: RwLock<bool>,
+    /// Optional lookup to resolve per-call approval requirements from tools.
+    requirement_lookup: Option<RequirementLookup>,
     /// Optional Discord config for sending approval prompts to Discord channels.
     #[cfg(feature = "discord")]
     discord: Option<DiscordConfig>,
@@ -43,9 +56,16 @@ impl ApprovalHook {
         Self {
             request_tx,
             chaos_mode: RwLock::new(false),
+            requirement_lookup: None,
             #[cfg(feature = "discord")]
             discord: None,
         }
+    }
+
+    /// Set a callback that resolves per-call approval requirements from tools.
+    pub fn with_requirement_lookup(mut self, lookup: RequirementLookup) -> Self {
+        self.requirement_lookup = Some(lookup);
+        self
     }
 
     /// Enable Discord-native approvals. When a tool call originates from a
@@ -62,6 +82,7 @@ impl ApprovalHook {
 async fn ui_approval(
     request_tx: &mpsc::Sender<ApprovalRequest>,
     call: &ToolCall,
+    requirement: ApprovalRequirement,
 ) -> Result<(), String> {
     let (response_tx, response_rx) = oneshot::channel();
 
@@ -69,6 +90,7 @@ async fn ui_approval(
         call_id: call.id.clone(),
         tool_name: call.name.clone(),
         arguments: call.arguments.clone(),
+        requirement,
         response_tx,
     };
 
@@ -224,8 +246,20 @@ impl Hook for ApprovalHook {
         #[cfg_attr(not(feature = "discord"), allow(unused_variables))] namespace: &Namespace,
         call: &mut ToolCall,
     ) -> Result<(), String> {
-        // If chaos mode is enabled, auto-approve everything
-        if *self.chaos_mode.read().await {
+        // Resolve the tool's approval requirement for this specific call.
+        let requirement = self
+            .requirement_lookup
+            .as_ref()
+            .map(|lookup| lookup(&call.name, &call.arguments))
+            .unwrap_or_default();
+
+        // Tools that declare Never skip approval entirely.
+        if requirement == ApprovalRequirement::Never {
+            return Ok(());
+        }
+
+        // If chaos mode is enabled, approve unless the tool says Always.
+        if *self.chaos_mode.read().await && requirement != ApprovalRequirement::Always {
             return Ok(());
         }
 
@@ -239,8 +273,8 @@ impl Hook for ApprovalHook {
             return Ok(());
         }
 
-        // Web UI approval flow (existing behavior)
-        ui_approval(&self.request_tx, call).await
+        // Web UI approval flow
+        ui_approval(&self.request_tx, call, requirement).await
     }
 }
 

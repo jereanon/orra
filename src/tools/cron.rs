@@ -103,6 +103,18 @@ impl Tool for CronTool {
                     "auto_approve": {
                         "type": "boolean",
                         "description": "When true, tool calls are auto-approved for this job without requiring user confirmation"
+                    },
+                    "lightweight": {
+                        "type": "boolean",
+                        "description": "When true, run a single LLM call with no tools (cheap triage mode)"
+                    },
+                    "cooldown_secs": {
+                        "type": "integer",
+                        "description": "Minimum seconds between consecutive fires of this job"
+                    },
+                    "max_concurrent": {
+                        "type": "integer",
+                        "description": "Maximum simultaneous runs of this job"
                     }
                 },
                 "required": ["action"]
@@ -153,6 +165,16 @@ impl CronTool {
         job.auto_approve = input
             .get("auto_approve")
             .and_then(|v| v.as_bool());
+        job.lightweight = input
+            .get("lightweight")
+            .and_then(|v| v.as_bool());
+        job.cooldown_secs = input
+            .get("cooldown_secs")
+            .and_then(|v| v.as_u64());
+        job.max_concurrent = input
+            .get("max_concurrent")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u32);
         let job = self
             .service
             .add_job(job)

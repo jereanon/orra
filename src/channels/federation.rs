@@ -50,6 +50,14 @@ pub struct RelayRequest {
     pub source_agent: Option<String>,
     /// Namespace key for session continuity (e.g. "federation:peer:uuid").
     pub namespace: String,
+    /// URL on the originating peer for tool execution callbacks.
+    /// When present, the receiving peer should proxy tool calls back to this
+    /// URL instead of executing them locally.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_callback_url: Option<String>,
+    /// Shared secret for authenticating tool callback requests.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_callback_secret: Option<String>,
 }
 
 /// A response from a remote agent after processing a relayed message.
@@ -152,6 +160,52 @@ pub struct SessionChatResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Tool execution callback (federation relay)
+// ---------------------------------------------------------------------------
+
+/// Request to execute tool calls on the originating peer.
+///
+/// Sent by the receiving peer back to the originating peer when a relayed
+/// agent invocation produces tool calls. The originating peer runs the tools
+/// locally and returns results.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolExecRequest {
+    /// Namespace for session/hook context.
+    pub namespace: String,
+    /// Tool calls to execute.
+    pub tool_calls: Vec<ToolCallInfo>,
+}
+
+/// A single tool call to be executed remotely.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolCallInfo {
+    /// Unique ID for this tool call (matches the LLM's call ID).
+    pub id: String,
+    /// Tool name.
+    pub name: String,
+    /// Tool arguments (JSON object).
+    pub arguments: serde_json::Value,
+}
+
+/// Response containing tool execution results.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolExecResponse {
+    /// Results for each tool call, in the same order as the request.
+    pub results: Vec<ToolResultInfo>,
+}
+
+/// Result of a single tool execution.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolResultInfo {
+    /// The call ID this result corresponds to.
+    pub call_id: String,
+    /// Output content from the tool.
+    pub content: String,
+    /// Whether the tool returned an error.
+    pub is_error: bool,
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -182,6 +236,8 @@ mod tests {
             source_peer: "home-herald".into(),
             source_agent: Some("Atlas".into()),
             namespace: "federation:home-herald:abc123".into(),
+            tool_callback_url: None,
+            tool_callback_secret: None,
         };
 
         let json = serde_json::to_string(&req).unwrap();
@@ -189,6 +245,7 @@ mod tests {
         assert_eq!(decoded.agent, "CodeBot");
         assert_eq!(decoded.source_peer, "home-herald");
         assert_eq!(decoded.source_agent, Some("Atlas".into()));
+        assert!(decoded.tool_callback_url.is_none());
     }
 
     #[test]
@@ -227,10 +284,98 @@ mod tests {
             source_peer: "peer-1".into(),
             source_agent: None,
             namespace: "federation:peer-1:xyz".into(),
+            tool_callback_url: None,
+            tool_callback_secret: None,
         };
 
         let json = serde_json::to_string(&req).unwrap();
         let decoded: RelayRequest = serde_json::from_str(&json).unwrap();
         assert!(decoded.source_agent.is_none());
+    }
+
+    #[test]
+    fn relay_request_with_tool_callback() {
+        let req = RelayRequest {
+            agent: "CodeBot".into(),
+            message: "Check the logs".into(),
+            source_peer: "home-herald".into(),
+            source_agent: Some("Atlas".into()),
+            namespace: "federation:home-herald:abc123".into(),
+            tool_callback_url: Some("http://home:8082/api/federation/tool-exec".into()),
+            tool_callback_secret: Some("secret123".into()),
+        };
+
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains("tool_callback_url"));
+        let decoded: RelayRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            decoded.tool_callback_url.as_deref(),
+            Some("http://home:8082/api/federation/tool-exec")
+        );
+        assert_eq!(decoded.tool_callback_secret.as_deref(), Some("secret123"));
+    }
+
+    #[test]
+    fn relay_request_backward_compatible_deserialization() {
+        // Old format without tool_callback fields should still deserialize
+        let json = r#"{
+            "agent": "Atlas",
+            "message": "Hello",
+            "source_peer": "peer-1",
+            "namespace": "federation:peer-1:xyz"
+        }"#;
+        let decoded: RelayRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(decoded.agent, "Atlas");
+        assert!(decoded.tool_callback_url.is_none());
+        assert!(decoded.tool_callback_secret.is_none());
+    }
+
+    #[test]
+    fn tool_exec_request_round_trip() {
+        let req = ToolExecRequest {
+            namespace: "federation:peer:abc".into(),
+            tool_calls: vec![
+                ToolCallInfo {
+                    id: "call_1".into(),
+                    name: "exec".into(),
+                    arguments: serde_json::json!({"command": "ls"}),
+                },
+                ToolCallInfo {
+                    id: "call_2".into(),
+                    name: "read_file".into(),
+                    arguments: serde_json::json!({"path": "/tmp/test"}),
+                },
+            ],
+        };
+
+        let json = serde_json::to_string(&req).unwrap();
+        let decoded: ToolExecRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.tool_calls.len(), 2);
+        assert_eq!(decoded.tool_calls[0].name, "exec");
+        assert_eq!(decoded.tool_calls[1].id, "call_2");
+    }
+
+    #[test]
+    fn tool_exec_response_round_trip() {
+        let resp = ToolExecResponse {
+            results: vec![
+                ToolResultInfo {
+                    call_id: "call_1".into(),
+                    content: "file1.txt\nfile2.txt".into(),
+                    is_error: false,
+                },
+                ToolResultInfo {
+                    call_id: "call_2".into(),
+                    content: "permission denied".into(),
+                    is_error: true,
+                },
+            ],
+        };
+
+        let json = serde_json::to_string(&resp).unwrap();
+        let decoded: ToolExecResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.results.len(), 2);
+        assert!(!decoded.results[0].is_error);
+        assert!(decoded.results[1].is_error);
     }
 }

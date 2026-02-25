@@ -82,6 +82,18 @@ pub enum RuntimeStreamEvent {
     Error(String),
 }
 
+/// Strategy for executing tool calls. The default implementation runs tools
+/// locally via the runtime's `ToolRegistry`. A remote executor can proxy
+/// tool calls back to an originating peer (used by federation relay).
+#[async_trait::async_trait]
+pub trait ToolExecutor: Send + Sync {
+    async fn execute_tool_calls(
+        &self,
+        namespace: &Namespace,
+        tool_calls: &[ToolCall],
+    ) -> Vec<ToolResult>;
+}
+
 pub struct Runtime<T: Tokenizer> {
     provider: Arc<dyn Provider>,
     streaming_provider: Option<Arc<dyn StreamingProvider>>,
@@ -138,6 +150,36 @@ impl<T: Tokenizer> Runtime<T> {
         user_message: Message,
         model: Option<String>,
         max_turns: Option<usize>,
+    ) -> Result<RunResult, RuntimeError> {
+        self.run_inner(namespace, user_message, model, max_turns, None)
+            .await
+    }
+
+    /// Run the agent loop with a custom tool executor.
+    ///
+    /// When `executor` is `Some`, tool calls are routed through it instead of
+    /// being executed locally. This is used by federation relay to proxy tool
+    /// execution back to the originating peer.
+    pub async fn run_with_executor(
+        &self,
+        namespace: &Namespace,
+        user_message: Message,
+        model: Option<String>,
+        max_turns: Option<usize>,
+        executor: Arc<dyn ToolExecutor>,
+    ) -> Result<RunResult, RuntimeError> {
+        self.run_inner(namespace, user_message, model, max_turns, Some(executor))
+            .await
+    }
+
+    /// Shared implementation for `run_with_model` and `run_with_executor`.
+    async fn run_inner(
+        &self,
+        namespace: &Namespace,
+        user_message: Message,
+        model: Option<String>,
+        max_turns: Option<usize>,
+        executor: Option<Arc<dyn ToolExecutor>>,
     ) -> Result<RunResult, RuntimeError> {
         let mut session = self
             .store
@@ -200,9 +242,13 @@ impl<T: Tokenizer> Runtime<T> {
             if response.finish_reason == FinishReason::ToolUse
                 && !response.message.tool_calls.is_empty()
             {
-                let tool_results = self
-                    .execute_tool_calls(namespace, &response.message.tool_calls)
-                    .await;
+                let tool_results = if let Some(ref exec) = executor {
+                    exec.execute_tool_calls(namespace, &response.message.tool_calls)
+                        .await
+                } else {
+                    self.execute_tool_calls(namespace, &response.message.tool_calls)
+                        .await
+                };
                 let result_message = Message::tool_result(tool_results.clone());
                 session.push_message(result_message);
 
@@ -592,6 +638,19 @@ impl<T: Tokenizer> Runtime<T> {
             results.push(self.execute_single_tool_call(namespace, call).await);
         }
         results
+    }
+
+    /// Execute tool calls locally using this runtime's tool registry and hooks.
+    ///
+    /// This is a public wrapper around the internal `execute_tool_calls` method,
+    /// used by federation's tool-exec endpoint to handle callback requests from
+    /// remote peers.
+    pub async fn execute_tool_calls_local(
+        &self,
+        namespace: &Namespace,
+        tool_calls: &[ToolCall],
+    ) -> Vec<ToolResult> {
+        self.execute_tool_calls(namespace, tool_calls).await
     }
 }
 

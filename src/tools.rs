@@ -16,6 +16,7 @@ pub mod claude_code;
 pub mod cron;
 pub mod delegation;
 pub mod exec;
+pub mod filesystem;
 #[cfg(feature = "image-gen")]
 pub mod image_gen;
 pub mod memory;
